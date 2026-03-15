@@ -1,0 +1,14 @@
+.app-container {
+  text-align: center;
+  font-family: 'sans-serif';
+}
+
+.main-button {
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+}
