@@ -3,7 +3,7 @@ import { initializeApp } from 'firebase/app';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { ShieldCheck, Wifi, Timer, Play, Square, Tag, Cloud, CloudOff } from 'lucide-react';
+import { ShieldCheck, Wifi, Timer, Play, Square, Tag, Cloud, CloudOff, AlertTriangle, Activity, XCircle } from 'lucide-react';
 
 const firebaseConfig = {
   apiKey: "AIzaSyB3o2kr0PBD-LXXO_loHH_lhbBd8SrH9Pc",
@@ -27,32 +27,54 @@ export default function App() {
   const [token, setToken] = useState('');
   const [permission, setPermission] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'default');
   
-  // Estados UI del Cronómetro Nube
-  const [timerName, setTimerName] = useState('Alerta Táctica');
+  const [timerName, setTimerName] = useState('Prueba de Impacto');
   const [inputMinutes, setInputMinutes] = useState(0);
   const [inputSeconds, setInputSeconds] = useState(10);
   
-  // Estado de sincronización con Firestore
   const [cloudTimer, setCloudTimer] = useState(null);
   const [timeLeftDisplay, setTimeLeftDisplay] = useState('');
   const [syncStatus, setSyncStatus] = useState('Desconectado');
+  
+  // Estados nuevos de diagnóstico y visuales
+  const [actionLog, setActionLog] = useState([]);
+  const [visualAlert, setVisualAlert] = useState(null);
 
-  const showNotification = useCallback(async (title, options) => {
-    if ('serviceWorker' in navigator) {
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        reg.showNotification(String(title), {
-          ...options,
-          icon: '/vite.svg',
-          badge: '/vite.svg',
-          vibrate: [500, 200, 500],
-          requireInteraction: true
-        });
-      } catch (e) {
-        console.error("Error UI Notification:", e);
-      }
+  const addLog = (msg, type = 'info') => {
+    setActionLog(prev => [{ time: new Date().toLocaleTimeString(), msg, type }, ...prev].slice(0, 5));
+  };
+
+  const triggerAlertSequence = useCallback(async (title, body) => {
+    // 1. Disparar Alerta Visual en el DOM (Garantizado que funciona)
+    setVisualAlert({ title, body });
+    addLog(`[UI] Alerta visual "${title}" renderizada en pantalla.`, 'success');
+
+    // 2. Intentar Notificación Push Local
+    if (permission !== 'granted') {
+      addLog(`[PUSH] Cancelado: Permisos denegados por el navegador.`, 'error');
+      return;
     }
-  }, []);
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        if (regs.length > 0) {
+          await regs[0].showNotification(String(title), {
+            body: String(body),
+            icon: '/vite.svg',
+            vibrate: [500, 200, 500, 200, 500],
+            requireInteraction: true
+          });
+          addLog(`[PUSH] Disparada vía Service Worker.`, 'success');
+          return;
+        }
+      }
+      // Fallback si no hay Service Worker activo
+      new Notification(String(title), { body: String(body), requireInteraction: true });
+      addLog(`[PUSH] Disparada vía API Básica (Fallback).`, 'warning');
+    } catch (e) {
+      addLog(`[PUSH] Fallo crítico al invocar API nativa: ${e.message}`, 'error');
+    }
+  }, [permission]);
 
   const autoRegisterToken = useCallback(async (uid) => {
     if (!messaging || !db) return;
@@ -61,7 +83,6 @@ export default function App() {
       if (currentToken) {
         setToken(String(currentToken));
         const tokenRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'tokens', currentToken);
-        // Actualiza el last_seen para mantener el token "limpio" y vivo
         await setDoc(tokenRef, {
           token: String(currentToken),
           owner_uid: String(uid),
@@ -72,25 +93,26 @@ export default function App() {
         setSyncStatus('Conectado');
       }
     } catch (err) {
-      console.error("Fallo de registro de token:", err);
+      setSyncStatus('Error');
+      addLog(`[DB] Error de registro de Token: ${err.message}`, 'error');
     }
   }, []);
 
-  // 1. Inicialización de Sesión y Token
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser && Notification.permission === 'granted') {
         autoRegisterToken(currentUser.uid);
       } else if (!currentUser) {
-        signInAnonymously(auth).catch(console.error);
+        signInAnonymously(auth).catch(e => addLog(`[AUTH] Fallo anónimo: ${e.message}`, 'error'));
       }
     });
 
     let unsubscribeMsg = () => {};
     if (messaging) {
       unsubscribeMsg = onMessage(messaging, (payload) => {
-        showNotification(payload.notification?.title || "War Control", payload.notification);
+        addLog(`[FCM] Paquete recibido desde servidor.`, 'info');
+        triggerAlertSequence(payload.notification?.title || "War Control", payload.notification?.body);
       });
     }
 
@@ -98,30 +120,26 @@ export default function App() {
       unsubscribeAuth();
       unsubscribeMsg();
     };
-  }, [autoRegisterToken, showNotification]);
+  }, [autoRegisterToken, triggerAlertSequence]);
 
-  // 2. Suscripción a la Base de Datos (Persistencia Visual)
   useEffect(() => {
     if (!token) return;
 
-    // Escuchamos el documento específico de esta alarma en la nube
     const timerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'timers', token);
     
     const unsubscribeTimer = onSnapshot(timerRef, (docSnap) => {
       if (docSnap.exists()) {
-        const data = docSnap.data();
-        setCloudTimer(data);
+        setCloudTimer(docSnap.data());
       } else {
         setCloudTimer(null);
       }
     }, (error) => {
-      console.error("Error de suscripción a Firestore:", error);
+      addLog(`[DB] Suscripción a BD falló: ${error.message}`, 'error');
     });
 
     return () => unsubscribeTimer();
   }, [token]);
 
-  // 3. Motor de Cálculo de Tiempo (Resistente a bloqueos de pantalla)
   useEffect(() => {
     if (!cloudTimer) {
       setTimeLeftDisplay('');
@@ -136,44 +154,58 @@ export default function App() {
         clearInterval(interval);
         setTimeLeftDisplay('00:00');
         
-        // El tiempo llegó a 0. Mostramos alerta local y borramos basura de la BD.
-        showNotification(`Alerta Finalizada`, { body: cloudTimer.name });
+        // Disparo de secuencias
+        addLog(`[CRONO] Tiempo agotado. Iniciando secuencias.`, 'warning');
+        triggerAlertSequence(`TIEMPO FINALIZADO`, cloudTimer.name);
         deleteCloudTimer(); 
       } else {
         const m = Math.floor(diff / 60000);
         const s = Math.floor((diff % 60000) / 1000);
         setTimeLeftDisplay(`${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`);
       }
-    }, 250); // Recálculo 4 veces por segundo para evitar desfases
+    }, 250);
 
     return () => clearInterval(interval);
-  }, [cloudTimer, showNotification]);
+  }, [cloudTimer, triggerAlertSequence]);
 
-  // Acciones de Base de Datos
   const startCloudTimer = async () => {
-    if (!token) return;
+    if (!token) {
+      addLog("[SYS] No se puede programar sin token asignado.", 'error');
+      return;
+    }
     if (inputMinutes === 0 && inputSeconds === 0) return;
     
-    const totalMs = (Number(inputMinutes) * 60000) + (Number(inputSeconds) * 1000);
-    const targetMs = Date.now() + totalMs;
+    try {
+      setSyncStatus('Escribiendo...');
+      const totalMs = (Number(inputMinutes) * 60000) + (Number(inputSeconds) * 1000);
+      const targetMs = Date.now() + totalMs;
 
-    const timerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'timers', token);
-    
-    // Sobrescribe cualquier cronómetro viejo (evita acumular datos)
-    await setDoc(timerRef, {
-      token: token,
-      name: timerName || 'Alerta Sin Nombre',
-      target_time: targetMs,
-      created_at: serverTimestamp(),
-      status: 'counting'
-    });
+      const timerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'timers', token);
+      
+      await setDoc(timerRef, {
+        token: token,
+        name: timerName || 'Alerta Táctica',
+        target_time: targetMs,
+        created_at: serverTimestamp(),
+        status: 'counting'
+      });
+      setSyncStatus('Conectado');
+      addLog(`[DB] Cronómetro "${timerName}" inyectado en Firestore.`, 'success');
+    } catch (error) {
+      setSyncStatus('Fallo BD');
+      addLog(`[DB] Fallo al escribir en nube: ${error.message}`, 'error');
+    }
   };
 
   const deleteCloudTimer = async () => {
     if (!token) return;
-    const timerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'timers', token);
-    // Orden de destrucción a Firebase
-    await deleteDoc(timerRef);
+    try {
+      const timerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'timers', token);
+      await deleteDoc(timerRef);
+      addLog(`[DB] Cronómetro destruido en Firestore.`, 'info');
+    } catch (error) {
+      addLog(`[DB] Fallo al destruir cronómetro: ${error.message}`, 'error');
+    }
   };
 
   const handleRequestPermission = async () => {
@@ -181,12 +213,35 @@ export default function App() {
     setPermission(status);
     if (status === 'granted' && user) {
       autoRegisterToken(user.uid);
+      addLog(`[SYS] Permisos concedidos por el usuario.`, 'success');
+    } else {
+      addLog(`[SYS] Permisos denegados.`, 'error');
     }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6 md:p-12 font-sans selection:bg-blue-500/30">
-      <div className="max-w-md mx-auto space-y-8">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6 md:p-12 font-sans selection:bg-blue-500/30 relative overflow-hidden">
+      
+      {/* OVERLAY DE ALERTA VISUAL (Cubre toda la pantalla) */}
+      {visualAlert && (
+        <div className="absolute inset-0 z-50 bg-red-600/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+          <AlertTriangle className="w-32 h-32 text-white mb-6 animate-bounce" />
+          <h1 className="text-5xl font-black text-white uppercase tracking-tighter text-center mb-4 shadow-black drop-shadow-2xl">
+            {visualAlert.title}
+          </h1>
+          <p className="text-2xl font-bold text-red-100 mb-12 text-center bg-black/30 p-4 rounded-2xl border border-red-400/30">
+            {visualAlert.body}
+          </p>
+          <button 
+            onClick={() => setVisualAlert(null)}
+            className="bg-black text-white px-12 py-5 rounded-full font-black text-xl hover:bg-zinc-900 transition-transform active:scale-90 border-2 border-red-500 shadow-2xl"
+          >
+            ENTENDIDO / DESCARTAR
+          </button>
+        </div>
+      )}
+
+      <div className="max-w-md mx-auto space-y-6 relative z-10">
         
         <header className="flex items-center gap-3 justify-center">
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
@@ -196,7 +251,7 @@ export default function App() {
         </header>
 
         {permission !== 'granted' ? (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 text-center space-y-6">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 text-center space-y-6 shadow-xl">
             <h2 className="text-2xl font-bold">Autorizar Terminal</h2>
             <button 
               onClick={handleRequestPermission}
@@ -208,7 +263,7 @@ export default function App() {
         ) : (
           <div className="space-y-6">
             
-            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 flex items-center justify-between px-6">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 flex items-center justify-between px-6 shadow-xl">
               <div className="flex items-center gap-3">
                 <Wifi className="w-4 h-4 text-emerald-500" />
                 <span className="text-xs font-bold text-zinc-400">ENLACE ACTIVO</span>
@@ -236,7 +291,7 @@ export default function App() {
                 <div className="space-y-5">
                   <div>
                     <label className="flex items-center gap-2 text-[10px] text-zinc-500 font-bold uppercase mb-2">
-                      <Tag className="w-3 h-3" /> Etiqueta (Ej: Escudo, Ataque)
+                      <Tag className="w-3 h-3" /> Etiqueta de la Alerta
                     </label>
                     <input 
                       type="text" 
@@ -269,7 +324,7 @@ export default function App() {
 
                   <button 
                     onClick={startCloudTimer}
-                    className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white py-4 rounded-2xl font-bold transition-colors"
+                    className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white py-4 rounded-2xl font-bold transition-colors active:scale-95"
                   >
                     <Play className="w-5 h-5" /> Enviar Orden al Servidor
                   </button>
@@ -284,13 +339,36 @@ export default function App() {
                   </div>
                   <button 
                     onClick={deleteCloudTimer}
-                    className="w-full flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 py-4 rounded-2xl font-bold transition-colors border border-red-500/20"
+                    className="w-full flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 py-4 rounded-2xl font-bold transition-colors border border-red-500/20 active:scale-95"
                   >
-                    <Square className="w-5 h-5" /> Destruir Alerta en Nube
+                    <Square className="w-5 h-5" /> Destruir Alerta
                   </button>
                 </div>
               )}
             </div>
+
+            {/* Consola de Rastreo Analítico */}
+            <div className="bg-black border border-zinc-800/50 rounded-2xl p-5 shadow-inner">
+              <div className="flex items-center gap-2 mb-4 border-b border-zinc-800 pb-3">
+                <Activity className="w-4 h-4 text-zinc-500" />
+                <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Log de Ejecución</h3>
+              </div>
+              <div className="space-y-3 font-mono text-[9px] h-32 overflow-y-auto pr-2 custom-scrollbar">
+                {actionLog.length === 0 ? (
+                  <p className="text-zinc-600 text-center italic mt-10">Esperando eventos...</p>
+                ) : (
+                  actionLog.map((log, i) => (
+                    <div key={i} className="flex gap-2">
+                      <span className="text-zinc-600 shrink-0">{log.time}</span>
+                      <span className={`${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-emerald-400' : log.type === 'warning' ? 'text-amber-400' : 'text-blue-400'}`}>
+                        {log.msg}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
           </div>
         )}
       </div>
