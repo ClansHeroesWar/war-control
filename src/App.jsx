@@ -6,11 +6,17 @@ import {
   Activity, BellRing, Beaker, Music, ChevronDown, ChevronUp, Settings, Clock, Eye, EyeOff, Radio
 } from 'lucide-react';
 
+// ==========================================
+// IMPORTACIONES DE FIREBASE
+// ==========================================
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
+// ==========================================
+// CREDENCIALES INYECTADAS
+// ==========================================
 const firebaseConfig = {
     apiKey: "AIzaSyB3o2kr0PBD-LXXO_loHH_lhbBd8SrH9Pc",
     authDomain: "war-control-push.firebaseapp.com",
@@ -20,10 +26,13 @@ const firebaseConfig = {
     appId: "1:1074882873916:web:24679bbdf9ce78f0329139"
 };
 
+const VAPID_KEY = "BBSuTkcsSNM2EDOuFwlx9sj9WVlO-B3teTlwD4nS7rOUkKl8v9SkzeZiadJMAgClf14-9-tAGrciC1rsfqlNtvc";
+
+// Inicialización condicional
 let app, authInstance, dbInstance, messagingInstance;
 let isOfflineMode = true;
 
-if (firebaseConfig.apiKey !== "TU_API_KEY_REAL") {
+if (firebaseConfig.apiKey) {
   try {
     app = initializeApp(firebaseConfig);
     authInstance = getAuth(app);
@@ -36,6 +45,9 @@ if (firebaseConfig.apiKey !== "TU_API_KEY_REAL") {
   }
 }
 
+// ==========================================
+// MOTOR DE AUDIO GLOBAL CORREGIDO
+// ==========================================
 let globalAudioCtx = null;
 let keepAliveOsc = null;
 
@@ -157,7 +169,6 @@ const App = () => {
   const activeVibrationIntervalRef = useRef(null); 
   const previewEngineRef = useRef(null);
   const syncRef = useRef(null); 
-  const audioCtxRef = useRef(null);
   
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
   useEffect(() => { targetEndTimeRef.current = targetEndTime; }, [targetEndTime]);
@@ -207,7 +218,7 @@ const App = () => {
       if (err.name === 'NotAllowedError') {
         setAlertQueue(prev => [...prev, { 
           title: "RESTRICCIÓN DE ENTORNO", 
-          body: "El lienzo bloquea el 'Modo Vigía' por políticas de seguridad.\n\nFuncionará en tu propio dominio Vercel/IDX.", 
+          body: "El navegador bloquea el 'Modo Vigía'. Asegúrate de estar interactuando con la app.", 
           type: "task" 
         }]);
       }
@@ -244,13 +255,28 @@ const App = () => {
     try { navigator.vibrate(pattern); } catch (e) {}
   }, []);
 
+  // Función crítica añadida: Detiene vibración y audio instantáneamente
+  const stopInfiniteAlarm = () => {
+      if (activeVibrationIntervalRef.current) {
+          clearInterval(activeVibrationIntervalRef.current);
+          activeVibrationIntervalRef.current = null;
+      }
+      try { if (navigator.vibrate) navigator.vibrate(0); } catch(e) {}
+      
+      if (activeAlarmEngineRef.current) {
+          activeAlarmEngineRef.current.stop();
+          activeAlarmEngineRef.current = null;
+      }
+  };
+
   const synthesizeAudio = (profile, isPreview = false) => {
       if (profile === 'muted') return null;
       initGlobalAudio(); 
-      if (!audioCtxRef.current) return null;
+      // CORRECCIÓN: Se usa la variable global que sí se inicializa
+      if (!globalAudioCtx) return null;
 
       try {
-          const ctx = audioCtxRef.current;
+          const ctx = globalAudioCtx;
           const mainGain = ctx.createGain();
           mainGain.connect(ctx.destination);
           mainGain.gain.value = 0.5;
@@ -354,7 +380,7 @@ const App = () => {
   };
 
   const triggerInfiniteAlarm = (type) => {
-      if (activeAlarmEngineRef.current) return;
+      stopInfiniteAlarm(); // CORRECCIÓN: Garantizar que no se solapen
       const profile = type === 'war' ? warSoundRef.current : taskSoundRef.current;
       if (vibrateOnRef.current && navigator.vibrate) {
           triggerHaptic([500, 200, 500, 200]);
@@ -363,18 +389,6 @@ const App = () => {
           }, 1400);
       }
       activeAlarmEngineRef.current = synthesizeAudio(profile, false);
-  };
-
-  const stopInfiniteAlarm = () => {
-      if (activeVibrationIntervalRef.current) {
-          clearInterval(activeVibrationIntervalRef.current);
-          activeVibrationIntervalRef.current = null;
-          if (navigator.vibrate) navigator.vibrate(0); 
-      }
-      if (activeAlarmEngineRef.current) {
-          activeAlarmEngineRef.current.stop();
-          activeAlarmEngineRef.current = null;
-      }
   };
 
   const toggleSoundProfile = () => {
@@ -397,23 +411,20 @@ const App = () => {
     try {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
-          
-        const vapidKey = "BBSuTkcsSNM2EDOuFwIx9sj9WVIO-B3teTIwD4nS7rOUkKl8v9SkzeZiadJMAgClf14-9-tAGrciC1rsfqINtvc";
-
         try {
-            const currentToken = await getToken(appMessaging, { vapidKey });
+            const currentToken = await getToken(appMessaging, { vapidKey: VAPID_KEY });
             if (currentToken) {
                 setPushToken(currentToken);
                 if (syncRef.current) {
                     syncRef.current({ fcmToken: currentToken, pushEnabled: true });
                 }
-                setAlertQueue(prev => [...prev, { title: "¡ENLACE EXITOSO!", body: "✅ Tu dispositivo está enlazado para recibir notificaciones con pantalla bloqueada.", type: "task" }]);
+                setAlertQueue(prev => [...prev, { title: "¡ENLACE EXITOSO!", body: "✅ Tu dispositivo está enlazado para recibir notificaciones (Notificaciones HTML).", type: "task" }]);
             } else {
                 setAlertQueue(prev => [...prev, { title: "ERROR DE TOKEN", body: "No se pudo obtener el token de registro de notificaciones.", type: "task" }]);
             }
         } catch (tokenErr) {
             console.error(tokenErr);
-            setAlertQueue(prev => [...prev, { title: "ERROR DE CONFIGURACIÓN", body: "Asegúrate de pegar tu VAPID Key pública en el código.", type: "task" }]);
+            setAlertQueue(prev => [...prev, { title: "ERROR DE CONFIGURACIÓN", body: "Revisa la VAPID Key.", type: "task" }]);
         }
       } else {
         setAlertQueue(prev => [...prev, { title: "PERMISO DENEGADO", body: "Debes otorgar permisos de notificación en tu navegador.", type: "task" }]);
@@ -430,7 +441,7 @@ const App = () => {
   const testStandardNotif = async () => { 
       try { 
           const p = await Notification.requestPermission();
-          if(p === 'granted') new Notification("War Control", { body: "Test 1 Local", icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png" }); 
+          if(p === 'granted') new Notification("War Control", { body: "Test de notificación local activo.", icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png" }); 
       } catch(e) {} 
   };
 
