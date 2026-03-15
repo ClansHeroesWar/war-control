@@ -6,36 +6,20 @@ import {
   Activity, BellRing, Beaker, Music, ChevronDown, ChevronUp, Settings, Clock, Eye, EyeOff, Radio
 } from 'lucide-react';
 
-// ==========================================
-// IMPORTACIONES DE FIREBASE
-// ==========================================
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
-// ==========================================
-// 1. PEGA AQUÍ TU BLOQUE FIREBASECONFIG EXACTO
-// Reemplaza todo este bloque desde "const firebaseConfig = {" hasta "};"
-// ==========================================
 const firebaseConfig = {
-
     apiKey: "AIzaSyB3o2kr0PBD-LXXO_loHH_lhbBd8SrH9Pc",
-  
     authDomain: "war-control-push.firebaseapp.com",
-  
     projectId: "war-control-push",
-  
     storageBucket: "war-control-push.firebasestorage.app",
-  
     messagingSenderId: "1074882873916",
-  
     appId: "1:1074882873916:web:24679bbdf9ce78f0329139"
-  
-  };
-// ==========================================
+};
 
-// Inicialización condicional
 let app, authInstance, dbInstance, messagingInstance;
 let isOfflineMode = true;
 
@@ -52,9 +36,6 @@ if (firebaseConfig.apiKey !== "TU_API_KEY_REAL") {
   }
 }
 
-// ==========================================
-// MOTOR DE AUDIO GLOBAL
-// ==========================================
 let globalAudioCtx = null;
 let keepAliveOsc = null;
 
@@ -417,11 +398,7 @@ const App = () => {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
           
-        // ==========================================
-        // 2. PEGA TU LLAVE VAPID AQUÍ (MANTÉN LAS COMILLAS)
-        // ==========================================
-        const vapidKey = "TU_CLAVE_VAPID_PUBLICA_AQUI"; 
-        // ==========================================
+        const vapidKey = "BBSuTkcsSNM2EDOuFwIx9sj9WVIO-B3teTIwD4nS7rOUkKl8v9SkzeZiadJMAgClf14-9-tAGrciC1rsfqINtvc";
 
         try {
             const currentToken = await getToken(appMessaging, { vapidKey });
@@ -1344,7 +1321,7 @@ const App = () => {
             <button onClick={() => setShowSoundMenu(true)} className="p-1.5 bg-zinc-800 text-amber-500 border border-zinc-700 rounded-lg shadow-lg hover:bg-zinc-700 transition-colors" title="Ajustes de Sonido">
                 <Music size={18}/>
             </button>
-            <button onClick={() => { setVibrateOn(!vibrateOn); if(syncRef.current) syncRef.current({ vibrateOn: !vibrateOn }); }} className={`p-1.5 rounded-lg border transition-colors ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`} title="Vibración">
+            <button onClick={() => { const next = !vibrateOn; setVibrateOn(next); if(!next) stopInfiniteAlarm(); if(syncRef.current) syncRef.current({ vibrateOn: next }); }} className={`p-1.5 rounded-lg border transition-colors ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`} title="Vibración">
                 <VibrateIcon size={18}/>
             </button>
             <button onClick={handleNotificationToggle} className={`p-1.5 rounded-lg border transition-colors ${pushToken ? 'bg-green-600 text-white border-green-600 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`} title="Notificaciones Push">
@@ -1725,6 +1702,7 @@ const App = () => {
               
               <button 
                 onClick={() => {
+                    stopInfiniteAlarm();
                     setActiveAlert(null); 
                 }} 
                 className="w-full bg-red-950 text-red-400 py-4 rounded-2xl font-black text-lg uppercase shadow-xl tracking-widest active:scale-95 transition-transform border border-red-800"
