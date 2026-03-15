@@ -288,7 +288,6 @@ const App = () => {
   const pointerPosRef = useRef({ x: 0, y: 0 });
   const autoScrollRafRef = useRef(null);
 
-  // Chequear permisos notificaciones iniciales
   useEffect(() => {
       if ("Notification" in window) {
           setNotifPermissionGranted(Notification.permission === 'granted');
@@ -491,7 +490,7 @@ const App = () => {
       try { 
           const p = await Notification.requestPermission();
           setNotifPermissionGranted(p === 'granted');
-          if(p === 'granted') new Notification(t('appTitle'), { body: "DEBUG: Local API Test", icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png" }); 
+          if(p === 'granted') new Notification(t('appTitle'), { body: "DEBUG: Local API Test", icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png", requireInteraction: true }); 
       } catch(e) {} 
   };
 
@@ -501,7 +500,7 @@ const App = () => {
           setNotifPermissionGranted(p === 'granted');
           if(p === 'granted') {
               navigator.serviceWorker.ready.then(reg => {
-                  reg.showNotification(t('appTitle'), { body: "DEBUG: Service Worker Tray Test", icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png", vibrate: [200, 100, 200] });
+                  reg.showNotification(t('appTitle'), { body: "DEBUG: Service Worker Tray Test", icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png", vibrate: [200, 100, 200], requireInteraction: true });
               });
           }
       }
@@ -514,7 +513,7 @@ const App = () => {
           if(p === 'granted') {
               setTimeout(() => {
                   navigator.serviceWorker.ready.then(reg => {
-                      reg.showNotification(t('appTitle'), { body: "DEBUG: Delayed 5s Test. Screen woke up?", icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png", vibrate: [500, 200, 500] });
+                      reg.showNotification(t('appTitle'), { body: "DEBUG: Delayed 5s Test. Screen woke up?", icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png", vibrate: [500, 200, 500], requireInteraction: true });
                   });
               }, 5000);
           }
@@ -603,14 +602,30 @@ const App = () => {
 
   useEffect(() => { syncRef.current = sync; }, [user, isOfflineMode]);
 
+  // EL BLOQUE CLAVE: Envío simultáneo de Alerta HTML y Notificación OS
   useEffect(() => {
       if (!activeAlert && alertQueue.length > 0) {
           const nextAlert = alertQueue[0];
           setActiveAlert(nextAlert);
           triggerInfiniteAlarm(nextAlert.type);
           setAlertQueue(prev => prev.slice(1));
+
+          // ORDEN DIRECTA AL SISTEMA OPERATIVO (BARRA DE NOTIFICACIONES)
+          if (notifPermissionGranted && 'serviceWorker' in navigator) {
+              navigator.serviceWorker.ready.then(reg => {
+                  reg.showNotification(nextAlert.title, {
+                      body: nextAlert.body,
+                      icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png",
+                      badge: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png",
+                      vibrate: [500, 200, 500, 200, 1000],
+                      requireInteraction: true // OBLIGA a Android a mantenerla en la barra
+                  });
+              });
+          } else if (notifPermissionGranted) {
+              new Notification(nextAlert.title, { body: nextAlert.body, requireInteraction: true });
+          }
       }
-  }, [activeAlert, alertQueue, triggerInfiniteAlarm]);
+  }, [activeAlert, alertQueue, triggerInfiniteAlarm, notifPermissionGranted]);
 
   useEffect(() => {
     if (!activeAlert && alertQueue.length === 0) stopInfiniteAlarm();
