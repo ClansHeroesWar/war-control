@@ -243,9 +243,11 @@ const App = () => {
   ];
 
   const ANTI_SLEEP_PROFILES = [
-    { id: 'engine', name: "Motor Submarino (50Hz)", type: "Zumbido persistente" },
+    { id: 'engine', name: "Motor Submarino", type: "Zumbido Profundo (40Hz)" },
+    { id: 'heartbeat', name: "Latido Subliminal", type: "Pulso rítmico bajo" },
     { id: 'static', name: "Estática de Radio", type: "Ruido blanco suave" },
-    { id: 'ultrasonic', name: "Ultrasonido (18kHz)", type: "Inaudible / Forzado" }
+    { id: 'ultrasonic', name: "Ultrasonido (19kHz)", type: "Inaudible al humano" },
+    { id: 'null', name: "Onda Nula", type: "Silencio matemático" }
   ];
 
   const [user, setUser] = useState(null);
@@ -289,17 +291,17 @@ const App = () => {
 
   const [vibrateOn, setVibrateOn] = useState(false);
   const [soundProfile, setSoundProfile] = useState('siren'); 
+  const [antiSleepSound, setAntiSleepSound] = useState('engine');
   
   const [sysNotifOn, setSysNotifOn] = useState(false);
   const [pushToken, setPushToken] = useState(null);
   
   const [warSound, setWarSound] = useState('siren');
   const [taskSound, setTaskSound] = useState('radar');
-  const [antiSleepSound, setAntiSleepSound] = useState('engine');
   
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const wakeLockRef = useRef(null);
-  const antiSleepEngineRef = useRef(null); // Referencia al oscilador anti-suspensión
+  const antiSleepEngineRef = useRef(null);
 
   const tasksRef = useRef([]);
   const targetEndTimeRef = useRef(null);
@@ -339,40 +341,69 @@ const App = () => {
   };
 
   // ==========================================
-  // MOTOR ANTI-SUSPENSIÓN (AUDIO CONTINUO NATIVO)
+  // GENERADOR SINTÉTICO ANTI-SUSPENSIÓN (100% NATIVO)
   // ==========================================
   const startAntiSleepAudio = useCallback((type) => {
       initGlobalAudio();
       if (!globalAudioCtx) return null;
-      
       const ctx = globalAudioCtx;
       if (ctx.state === 'suspended') ctx.resume();
 
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const masterGain = ctx.createGain();
+      masterGain.connect(ctx.destination);
+      let nodesToStop = [];
+      let intervalId = null;
 
       if (type === 'engine') {
-          osc.type = 'sine';
-          osc.frequency.value = 50; 
-          gain.gain.value = 0.05; 
+          const osc = ctx.createOscillator();
+          osc.type = 'sine'; osc.frequency.value = 40; 
+          masterGain.gain.value = 0.1;
+          osc.connect(masterGain); osc.start();
+          nodesToStop.push(osc);
       } else if (type === 'static') {
-          // Aproximación de ruido blanco con oscilador modulado rápidamente
-          osc.type = 'square';
-          osc.frequency.value = 100;
-          gain.gain.value = 0.01;
+          const bufferSize = ctx.sampleRate * 2;
+          const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) { data[i] = Math.random() * 2 - 1; }
+          const noise = ctx.createBufferSource();
+          noise.buffer = buffer; noise.loop = true;
+          masterGain.gain.value = 0.005; 
+          noise.connect(masterGain); noise.start();
+          nodesToStop.push(noise);
+      } else if (type === 'heartbeat') {
+          masterGain.gain.value = 0.4;
+          const playBeat = () => {
+              if (ctx.state === 'closed') return;
+              const osc = ctx.createOscillator(); const gain = ctx.createGain();
+              osc.connect(gain); gain.connect(masterGain);
+              osc.type = 'sine'; osc.frequency.value = 40;
+              gain.gain.setValueAtTime(0, ctx.currentTime);
+              gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.1);
+              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+              osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
+              nodesToStop.push(osc);
+          };
+          playBeat();
+          intervalId = setInterval(() => { playBeat(); setTimeout(playBeat, 400); }, 1500);
       } else if (type === 'ultrasonic') {
-          osc.type = 'sine';
-          osc.frequency.value = 18000; 
-          gain.gain.value = 0.1; // Inaudible, forzando trabajo CPU
+          const osc = ctx.createOscillator();
+          osc.type = 'sine'; osc.frequency.value = 19000; 
+          masterGain.gain.value = 0.05; 
+          osc.connect(masterGain); osc.start();
+          nodesToStop.push(osc);
+      } else if (type === 'null') {
+          const osc = ctx.createOscillator();
+          osc.type = 'sine'; osc.frequency.value = 100;
+          masterGain.gain.value = 0.0001; // Volumen matemático, no real
+          osc.connect(masterGain); osc.start();
+          nodesToStop.push(osc);
       }
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
 
       return {
           stop: () => {
-              try { osc.stop(); osc.disconnect(); gain.disconnect(); } catch(e){}
+              if (intervalId) clearInterval(intervalId);
+              nodesToStop.forEach(n => { try { n.stop(); n.disconnect(); } catch(e){} });
+              try { masterGain.disconnect(); } catch(e){}
           }
       };
   }, []);
@@ -392,12 +423,11 @@ const App = () => {
       return;
     }
 
-    // Encender Audio Continuo Real
     antiSleepEngineRef.current = startAntiSleepAudio(antiSleepSound);
 
     if (!('wakeLock' in navigator)) {
       setWakeLockActive(true); 
-      addLog("Modo Vigía: API Nativa no soportada. Operando exclusivamente con Motor Anti-Suspensión de Audio.", "warning");
+      addLog("Modo Vigía: Solo Motor Anti-Suspensión activo.", "warning");
       return;
     }
 
@@ -406,15 +436,14 @@ const App = () => {
       setWakeLockActive(true);
       addLog("Modo Vigía Completo ACTIVADO (Audio + Pantalla).", "success");
       wakeLockRef.current.addEventListener('release', () => { 
-          addLog("La pantalla perdió el bloqueo nativo. Confiando persistencia en el Motor Anti-Suspensión Acústico.", "warning");
+          addLog("Pantalla sin bloqueo, confiando en Motor Anti-Suspensión.", "warning");
       });
     } catch (err) {
       setWakeLockActive(true);
-      addLog(`WakeLock falló, operando en modo Audio continuo.`, "warning");
+      addLog(`WakeLock falló, operando en modo Audio Continuo.`, "warning");
     }
   };
 
-  // Escucha cambios en el sonido Anti-Sleep y lo reinicia si está activo
   useEffect(() => {
       if (wakeLockActive) {
           if (antiSleepEngineRef.current) antiSleepEngineRef.current.stop();
@@ -450,10 +479,6 @@ const App = () => {
       if (activeAlarmEngineRef.current) {
           activeAlarmEngineRef.current.stop();
           activeAlarmEngineRef.current = null;
-      }
-      if (previewEngineRef.current) {
-          previewEngineRef.current.stop();
-          previewEngineRef.current = null;
       }
   }, []);
 
@@ -537,15 +562,32 @@ const App = () => {
       } catch(e) { return null; }
   }, []);
 
-  const playPreview = useCallback((profile) => {
+  const playPreview = useCallback((profile, isAntiSleepPreview = false) => {
       stopInfiniteAlarm();
+      if (previewEngineRef.current) {
+          previewEngineRef.current.stop();
+          previewEngineRef.current = null;
+      }
+
       if (profile === 'muted') {
           addLog("Perfil configurado a: Silenciado", "info");
           return;
       }
+      
       addLog(`Reproduciendo muestra de audio: ${profile}`, "info");
-      previewEngineRef.current = synthesizeAudio(profile, true);
-  }, [stopInfiniteAlarm, synthesizeAudio, addLog]);
+
+      if (isAntiSleepPreview) {
+          previewEngineRef.current = startAntiSleepAudio(profile);
+          setTimeout(() => {
+              if (previewEngineRef.current) {
+                  previewEngineRef.current.stop();
+                  previewEngineRef.current = null;
+              }
+          }, 3000);
+      } else {
+          previewEngineRef.current = synthesizeAudio(profile, true);
+      }
+  }, [stopInfiniteAlarm, synthesizeAudio, startAntiSleepAudio, addLog]);
 
   const triggerInfiniteAlarm = useCallback((type) => {
       stopInfiniteAlarm();
@@ -570,7 +612,7 @@ const App = () => {
       if (sysNotifOn) {
           setSysNotifOn(false);
           if (syncRef.current) syncRef.current({ sysNotifOn: false });
-          addLog("Notificaciones en barra DESACTIVADAS manualmente.", "warning");
+          addLog("Notificaciones en barra DESACTIVADAS.", "warning");
           return;
       }
 
@@ -584,7 +626,7 @@ const App = () => {
           if (status === 'granted') {
               setSysNotifOn(true);
               if (syncRef.current) syncRef.current({ sysNotifOn: true });
-              addLog("Permisos CONCEDIDOS. Notificaciones de barra ACTIVAS.", "success");
+              addLog("Permiso de notificación CONCEDIDO. Alertas activadas.", "success");
               
               if (messagingInstance && user) {
                   try {
@@ -592,14 +634,13 @@ const App = () => {
                       if (currentToken) {
                           setPushToken(currentToken);
                           if (syncRef.current) syncRef.current({ fcmToken: currentToken });
-                          addLog("Módulo Push FCM enlazado en segundo plano.", "success");
                       }
                   } catch (e) {
-                      addLog(`Advertencia: Fallo Token FCM (${e.message}). Las notificaciones locales seguirán operando.`, "warning");
+                      addLog(`Aviso: Fallo Token FCM. Locales seguirán operando.`, "warning");
                   }
               }
           } else {
-              addLog("Permiso de notificación DENEGADO por el usuario o sistema operativo.", "error");
+              addLog("Permiso de notificación DENEGADO por el usuario o sistema.", "error");
           }
       } catch (err) {
           addLog(`Error crítico al solicitar notificaciones: ${err.message}`, "error");
@@ -658,9 +699,7 @@ const App = () => {
                     alerted: t.alerted || false
                   })));
                 }
-            } catch(e) {
-                addLog("Error recuperando caché local", "error");
-            }
+            } catch(e) {}
         }
         setIsLoaded(true);
         addLog("SISTEMA INICIADO EN MODO LOCAL (OFFLINE)", "warning");
@@ -817,7 +856,7 @@ const App = () => {
                   }
               }
             } catch(e) {
-                addLog("Error en matemática de tiempo principal", "error");
+                addLog("Error matemática de tiempo principal", "error");
             }
           }
 
@@ -1281,14 +1320,30 @@ const App = () => {
   const currentAlertConf = activeAlert ? (alertConfig[activeAlert.type] || alertConfig.task) : alertConfig.task;
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 p-4 pb-32 overflow-x-hidden font-sans" style={{ WebkitTapHighlightColor: 'transparent' }}>
+    <div className="min-h-screen bg-black text-zinc-100 p-4 pb-32 overflow-x-hidden font-sans">
       <style>{`
+        * { 
+            user-select: none; 
+            -webkit-user-select: none; 
+            -webkit-touch-callout: none; 
+            -webkit-tap-highlight-color: transparent !important;
+            outline: none !important;
+            touch-action: manipulation;
+        }
+        *:focus, *:active {
+            outline: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+        }
+        input { 
+            user-select: text; 
+            -webkit-user-select: text; 
+            -webkit-touch-callout: default; 
+            touch-action: auto;
+        }
         @keyframes tremble { 0% { transform: rotate(1.5deg) scale(1.05); } 50% { transform: rotate(-1.5deg) scale(1.05); } 100% { transform: rotate(1.5deg) scale(1.05); } }
         .is-ghost { animation: tremble 0.12s infinite !important; }
         .drop-inside-target { background-color: rgba(245, 158, 11, 0.08) !important; border-color: #f59e0b !important; }
         .drop-extract-target { background-color: rgba(239, 68, 68, 0.15) !important; border-color: #ef4444 !important; }
-        * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-        input { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
@@ -1331,6 +1386,66 @@ const App = () => {
              <button onClick={() => setActiveHelp(null)} className="w-full mt-6 bg-blue-900/30 text-blue-400 py-3 rounded-xl font-black uppercase text-xs">{t('understood')}</button>
           </div>
         </div>
+      )}
+
+      {showSoundMenu && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md pointer-events-auto">
+            <div className="bg-zinc-900 border border-amber-500 w-full max-w-sm rounded-[32px] shadow-[0_0_50px_rgba(245,158,11,0.15)] relative animate-in zoom-in duration-300 flex flex-col max-h-[85vh]">
+               <div className="p-5 pb-3 border-b border-zinc-800 flex justify-between items-center shrink-0">
+                   <div className="flex items-center gap-2"><Music className="text-amber-500" size={24} /><h2 className="text-lg font-black text-white uppercase leading-none tracking-wide">{t('soundConfig')}</h2></div>
+                   <button onClick={() => { setShowSoundMenu(false); stopInfiniteAlarm(); }} className="text-zinc-500 p-1"><X size={24}/></button>
+               </div>
+               <div className="overflow-y-auto p-4 space-y-6 custom-scrollbar">
+                   <div>
+                       <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><HornIcon size={14}/> {t('earlyWarnings')}</h3>
+                       <div className="space-y-1.5">
+                           {SOUND_PROFILES.map(prof => (
+                               <div key={`war-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer ${warSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800'}`} onClick={() => { setWarSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ warSound: prof.id }); }}>
+                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${warSound === prof.id ? 'text-amber-500' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{warSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
+                               </div>
+                           ))}
+                       </div>
+                   </div>
+                   <div>
+                       <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><RolledScrollIcon size={14}/> {t('taskFinished')}</h3>
+                       <div className="space-y-1.5">
+                           {SOUND_PROFILES.map(prof => (
+                               <div key={`task-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer ${taskSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800'}`} onClick={() => { setTaskSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ taskSound: prof.id }); }}>
+                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${taskSound === prof.id ? 'text-amber-400' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{taskSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
+                               </div>
+                           ))}
+                       </div>
+                   </div>
+                   <div>
+                       <h3 className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-3 flex items-center gap-2"><Eye size={14}/> Motor Anti-Suspensión</h3>
+                       <div className="space-y-1.5">
+                           {ANTI_SLEEP_PROFILES.map(prof => (
+                               <div key={`antisleep-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer ${antiSleepSound === prof.id ? 'bg-blue-600/20 border-blue-500' : 'bg-zinc-800/50 border-zinc-800'}`} onClick={() => { setAntiSleepSound(prof.id); playPreview(prof.id, true); if(syncRef.current) syncRef.current({ antiSleepSound: prof.id }); }}>
+                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id, true); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${antiSleepSound === prof.id ? 'text-blue-500' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{antiSleepSound === prof.id && <Check size={16} className="text-blue-500 mr-2"/>}
+                               </div>
+                           ))}
+                       </div>
+                   </div>
+                   <div>
+                       <h3 className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-3 flex items-center gap-2"><CrownScrollIcon size={14}/> {t('clanMessages')}</h3>
+                       <div className="p-4 bg-purple-900/10 border border-purple-500/20 rounded-xl text-center">
+                           <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">MÓDULO DE SERVIDOR EN CONSTRUCCIÓN</span>
+                           <span className="text-[9px] text-zinc-500">Requiere backend de Telegram para disparar push a la alianza.</span>
+                       </div>
+                   </div>
+               </div>
+            </div>
+        </div>
+      )}
+
+      {confirmBoxReset && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md text-center">
+            <div className="bg-zinc-900 w-full max-w-xs p-6 rounded-[32px] shadow-2xl animate-in zoom-in duration-300 border border-amber-500">
+              <AlertTriangle size={48} className="mx-auto mb-4 text-amber-500"/><h2 className="text-xl font-black text-white uppercase mb-2 leading-none">{t('confirmResetTitle')}</h2>
+              <p className="text-zinc-400 font-bold mb-6 text-sm leading-tight whitespace-pre-wrap">{t('confirmResetDesc')} <span className="text-amber-500">{confirmBoxReset.name}</span>?</p>
+              <div className="flex gap-3"><button onClick={() => setConfirmBoxReset(null)} className="flex-1 bg-amber-600 text-white py-3 rounded-xl font-black text-xs uppercase shadow-lg">{t('cancel')}</button><button onClick={executeBoxReset} className="flex-1 bg-zinc-800 text-red-400 py-3 rounded-xl font-black text-xs uppercase">{t('resetAll')}</button></div>
+            </div>
+          </div>
       )}
 
       <div className="max-w-md mx-auto space-y-4 pt-2">
