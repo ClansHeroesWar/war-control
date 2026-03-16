@@ -3,16 +3,16 @@ import {
   ShieldAlert, RotateCcw, AlertTriangle, X, Minus, Plus,
   Pause, Play, Trash2, Edit2, Check, GripVertical, Smartphone,
   Layout, ArrowDownToLine, Volume2, Volume1, VolumeX,
-  BellRing, Music, ChevronDown, ChevronUp, Settings, Clock, Eye, EyeOff, Globe, Info
+  BellRing, Music, ChevronDown, ChevronUp, Settings, Clock, Eye, EyeOff, Globe, Info, TerminalSquare, Activity
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { getMessaging, getToken } from 'firebase/messaging';
 
 // ==========================================
-// DICCIONARIO DE IDIOMAS Y AYUDAS CONSOLIDADAS
+// DICCIONARIO DE IDIOMAS Y AYUDAS
 // ==========================================
 const dict = {
   en: {
@@ -58,11 +58,11 @@ const dict = {
     typeRelaxing: "Relaxing",
     typeSilent: "Silent",
     help_header_title: "Global Control Panel",
-    help_header_desc: "• Globe: Changes system language.\n• Eye (WakeLock): Prevents screen from turning off, ensuring precise alarms.\n• Volume: Quick toggle for system audio.\n• Music Note: Advanced acoustic profile settings.\n• Vibration: Toggles haptic feedback.\n• Smartphone: Enables System Tray Notifications. Tap to authorize.",
+    help_header_desc: "• Globe: Changes system language.\n• Terminal: Opens Debug Logs.\n• Eye: Prevents screen from sleeping.\n• Volume: System audio toggle.\n• Music Note: Acoustic settings.\n• Smartphone: Toggles system push notifications.",
     help_time_title: "Strategic Time Module",
-    help_time_desc: "• End Time: Displays global target time.\n• Early Warnings: Select preset alerts (15M, 10M, 5M) before the global End Time.\n• H/M Inputs: Manually set global target time.\n• Sync: Applies input time to recalculate warnings.",
+    help_time_desc: "• End Time: Displays global target time.\n• Early Warnings: Select preset alerts (15M, 10M, 5M) before the global End Time.\n• H/M Inputs: Manually set global target time.",
     help_creation_title: "Deployment Module",
-    help_creation_desc: "• Add Crono: Injects independent timers to the field.\n• Create Section: Builds a visual folder to group multiple timers.\nNote: Timers can be dragged and dropped freely between sections."
+    help_creation_desc: "• Add Crono: Injects independent timers to the field.\n• Create Section: Builds a visual folder to group multiple timers."
   },
   es: {
     appTitle: "War Control",
@@ -107,16 +107,16 @@ const dict = {
     typeRelaxing: "Relajante",
     typeSilent: "Silencio",
     help_header_title: "Panel de Control Global",
-    help_header_desc: "• Globo: Cambia el idioma del sistema.\n• Ojo (Modo Vigía): Evita que la pantalla se apague, asegurando alarmas exactas.\n• Volumen: Atajo rápido de silencio.\n• Nota Musical: Configuración avanzada de sonido.\n• Vibración: Activa respuestas físicas táctiles.\n• Teléfono: Habilita Notificaciones de Sistema. Toca para autorizar.",
+    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Evita que la pantalla se apague.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones de barra.",
     help_time_title: "Módulo de Tiempo Estratégico",
-    help_time_desc: "• Hora Fin: Establece el límite global.\n• Avisos Tempranos: Calcula alertas automáticas (15M, 10M, 5M) antes de llegar a la Hora Fin.\n• Entradas H/M: Define horas/minutos para tu objetivo.\n• Sincronizar: Aplica el tiempo ingresado al sistema.",
+    help_time_desc: "• Hora Fin: Establece el límite global.\n• Avisos Tempranos: Calcula alertas (15M, 10M, 5M) antes de la Hora Fin.\n• Entradas H/M: Define tu objetivo manual.",
     help_creation_title: "Módulo de Despliegue",
-    help_creation_desc: "• Añadir Crono: Inyecta cronómetros individuales al campo.\n• Crear Sección: Construye contenedores visuales para agrupar cronómetros en fases.\nNota: Usa el icono de los puntos para arrastrar cronos libremente."
+    help_creation_desc: "• Añadir Crono: Inyecta cronómetros al campo.\n• Crear Sección: Construye contenedores visuales.\nNota: Arrastra cronos usando el icono de puntos."
   }
 };
 
 // ==========================================
-// CREDENCIALES FIREBASE 
+// CREDENCIALES FIREBASE
 // ==========================================
 const firebaseConfig = {
     apiKey: "AIzaSyB3o2kr0PBD-LXXO_loHH_lhbBd8SrH9Pc",
@@ -174,10 +174,21 @@ const COLORS = [
 const App = () => {
   const appId = 'war-control-pro';
   const [lang, setLang] = useState('es');
-  const t = (key) => dict[lang][key] || key;
+  
+  const t = useCallback((key) => dict[lang][key] || key, [lang]);
 
-  // Estado del reporte modal de ayuda
   const [activeHelp, setActiveHelp] = useState(null);
+  
+  // ==========================================
+  // SISTEMA DE LOGS (TERMINAL TÁCTICA)
+  // ==========================================
+  const [actionLog, setActionLog] = useState([]);
+  const [showLogs, setShowLogs] = useState(false);
+
+  const addLog = useCallback((msg, type = 'info') => {
+    setActionLog(prev => [{ time: new Date().toLocaleTimeString(), msg, type }, ...prev].slice(0, 50));
+    console.log(`[${type.toUpperCase()}] ${msg}`);
+  }, []);
 
   const SOUND_PROFILES = [
     { id: 'siren', name: t('soundSiren'), type: t('typeUrgent') },
@@ -233,8 +244,9 @@ const App = () => {
 
   const [vibrateOn, setVibrateOn] = useState(false);
   const [soundProfile, setSoundProfile] = useState('siren'); 
+  
+  const [sysNotifOn, setSysNotifOn] = useState(false);
   const [pushToken, setPushToken] = useState(null);
-  const [notifPermissionGranted, setNotifPermissionGranted] = useState(false);
   
   const [warSound, setWarSound] = useState('siren');
   const [taskSound, setTaskSound] = useState('radar');
@@ -271,22 +283,16 @@ const App = () => {
   const pointerPosRef = useRef({ x: 0, y: 0 });
   const autoScrollRafRef = useRef(null);
 
-  // Inicializar Permisos de Notificación
-  useEffect(() => {
-    if (typeof Notification !== 'undefined') {
-      setNotifPermissionGranted(Notification.permission === 'granted');
-    }
-  }, []);
-
   const toggleLanguage = () => {
       const nextLang = lang === 'en' ? 'es' : 'en';
       setLang(nextLang);
       if (syncRef.current) syncRef.current({ language: nextLang });
+      addLog(`Idioma cambiado a ${nextLang.toUpperCase()}`, 'info');
   };
 
   const toggleWakeLock = async () => {
     if (!('wakeLock' in navigator)) {
-      setAlertQueue(prev => [...prev, { title: "API NO SOPORTADA", body: "Tu navegador no soporta el bloqueo de pantalla.", type: "task" }]);
+      addLog("API WakeLock no soportada en este navegador.", "error");
       return;
     }
     try {
@@ -294,25 +300,34 @@ const App = () => {
         await wakeLockRef.current.release();
         wakeLockRef.current = null;
         setWakeLockActive(false);
+        addLog("Modo Vigía DESACTIVADO.", "warning");
       } else {
         wakeLockRef.current = await navigator.wakeLock.request('screen');
         setWakeLockActive(true);
-        wakeLockRef.current.addEventListener('release', () => { setWakeLockActive(false); });
+        addLog("Modo Vigía ACTIVADO (Pantalla bloqueada).", "success");
+        wakeLockRef.current.addEventListener('release', () => { 
+            setWakeLockActive(false); 
+            addLog("Modo Vigía liberado por el sistema operativo.", "warning");
+        });
       }
     } catch (err) {
       setWakeLockActive(false);
+      addLog(`Error WakeLock: ${err.message}`, "error");
     }
   };
 
   useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (wakeLockRef.current !== null && document.visibilityState === 'visible') {
-        try { wakeLockRef.current = await navigator.wakeLock.request('screen'); setWakeLockActive(true); } catch (err) { setWakeLockActive(false); }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setTasks(prev => [...prev]); 
+        if (wakeLockActive && wakeLockRef.current === null && 'wakeLock' in navigator) {
+            navigator.wakeLock.request('screen').then(lock => { wakeLockRef.current = lock; }).catch(()=>{});
+        }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  }, [wakeLockActive]);
 
   const triggerHaptic = useCallback((pattern) => {
     if (!navigator.vibrate) return;
@@ -419,19 +434,25 @@ const App = () => {
 
   const playPreview = useCallback((profile) => {
       stopInfiniteAlarm();
-      if (profile === 'muted') return;
+      if (profile === 'muted') {
+          addLog("Perfil de audio configurado a: Silenciado", "info");
+          return;
+      }
+      addLog(`Reproduciendo muestra de audio: ${profile}`, "info");
       previewEngineRef.current = synthesizeAudio(profile, true);
-  }, [stopInfiniteAlarm, synthesizeAudio]);
+  }, [stopInfiniteAlarm, synthesizeAudio, addLog]);
 
   const triggerInfiniteAlarm = useCallback((type) => {
       stopInfiniteAlarm();
       const profile = type === 'war' ? warSoundRef.current : taskSoundRef.current;
+      addLog(`Disparando alarma táctica infinita [Tipo: ${type}]. Audio: ${profile}`, "warning");
+      
       if (vibrateOnRef.current && navigator.vibrate) {
           triggerHaptic([500, 200, 500, 200]);
           activeVibrationIntervalRef.current = setInterval(() => { triggerHaptic([500, 200, 500, 200]); }, 1400);
       }
       activeAlarmEngineRef.current = synthesizeAudio(profile, false);
-  }, [stopInfiniteAlarm, triggerHaptic, synthesizeAudio]);
+  }, [stopInfiniteAlarm, triggerHaptic, synthesizeAudio, addLog]);
 
   const toggleSoundProfile = () => {
       const next = soundProfile === 'siren' ? 'radar' : soundProfile === 'radar' ? 'muted' : 'siren';
@@ -440,36 +461,50 @@ const App = () => {
       if (next !== 'muted') playPreview(next);
   };
 
-  // Motor de Autorización Push (Portado de tu prototipo)
-  const handleRequestPermission = async () => {
-    if (typeof Notification === 'undefined') return;
-    
-    try {
-      const status = await Notification.requestPermission();
-      setNotifPermissionGranted(status === 'granted');
-      
-      if (status === 'granted' && messagingInstance && user) {
-        try {
-          const currentToken = await getToken(messagingInstance, { vapidKey: VAPID_KEY });
-          if (currentToken) {
-            setPushToken(currentToken);
-            // Guardamos el token en Firestore como en tu prototipo
-            if (syncRef.current) {
-                syncRef.current({ fcmToken: currentToken, pushEnabled: true });
-            }
-          }
-        } catch (e) {
-          console.error("Token error:", e);
-        }
+  const toggleSystemNotifications = async () => {
+      if (sysNotifOn) {
+          setSysNotifOn(false);
+          if (syncRef.current) syncRef.current({ sysNotifOn: false });
+          addLog("Notificaciones en barra DESACTIVADAS manualmente.", "warning");
+          return;
       }
-    } catch (err) {
-        console.error(err);
-    }
+
+      if (typeof Notification === 'undefined') {
+          addLog("Tu sistema/navegador no soporta notificaciones de sistema.", "error");
+          return;
+      }
+
+      try {
+          const status = await Notification.requestPermission();
+          if (status === 'granted') {
+              setSysNotifOn(true);
+              if (syncRef.current) syncRef.current({ sysNotifOn: true });
+              addLog("Permisos CONCEDIDOS. Notificaciones de barra ACTIVAS.", "success");
+              
+              if (messagingInstance && user) {
+                  try {
+                      const currentToken = await getToken(messagingInstance, { vapidKey: VAPID_KEY });
+                      if (currentToken) {
+                          setPushToken(currentToken);
+                          if (syncRef.current) syncRef.current({ fcmToken: currentToken });
+                          addLog("Módulo Push FCM enlazado en segundo plano.", "success");
+                      }
+                  } catch (e) {
+                      addLog(`Advertencia: Fallo Token FCM (${e.message}). Las notificaciones locales seguirán operando.`, "warning");
+                  }
+              }
+          } else {
+              addLog("Permiso de notificaciones DENEGADO por el usuario o sistema operativo.", "error");
+          }
+      } catch (err) {
+          addLog(`Error crítico al solicitar notificaciones: ${err.message}`, "error");
+      }
   };
 
-  // LA LÓGICA CLAVE DE NOTIFICACIÓN DE SISTEMA (Extraída de tu prototipo)
-  const triggerSystemNotification = async (title, body) => {
-      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const triggerSystemNotification = useCallback(async (title, body) => {
+      if (!sysNotifOn || typeof Notification === 'undefined' || Notification.permission !== 'granted') {
+          return;
+      }
 
       try {
           if ('serviceWorker' in navigator) {
@@ -478,18 +513,20 @@ const App = () => {
                   await regs[0].showNotification(String(title), {
                       body: String(body),
                       icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+                      badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
                       vibrate: [500, 200, 500, 200, 500],
-                      requireInteraction: true // Obliga a anclarse a la barra
+                      requireInteraction: true 
                   });
+                  addLog(`Alerta anclada a la barra mediante ServiceWorker: ${title}`, 'success');
                   return;
               }
           }
-          // Fallback nativo
           new Notification(String(title), { body: String(body), requireInteraction: true });
+          addLog(`Alerta enviada mediante API Nativa (Fallback): ${title}`, 'success');
       } catch (e) {
-          console.error("System notification failed:", e);
+          addLog(`Fallo al inyectar alerta en la barra: ${e.message}`, "error");
       }
-  };
+  }, [sysNotifOn, addLog]);
 
   useEffect(() => {
     if (isOfflineMode) {
@@ -503,12 +540,11 @@ const App = () => {
                 if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
                 if (data.warSound) setWarSound(data.warSound);
                 if (data.taskSound) setTaskSound(data.taskSound);
+                if (data.sysNotifOn !== undefined) setSysNotifOn(data.sysNotifOn);
                 if (data.boxes) setBoxes(data.boxes);
                 if (data.rootOrder) setRootOrder(data.rootOrder);
                 if (data.language) setLang(data.language);
-                if (data.pushEnabled !== undefined && data.fcmToken) {
-                    setPushToken(data.fcmToken);
-                }
+                if (data.fcmToken) setPushToken(data.fcmToken);
                 if (data.tasks) {
                   const now = Date.now();
                   setTasks(data.tasks.map(t => ({
@@ -521,6 +557,7 @@ const App = () => {
             } catch(e) {}
         }
         setIsLoaded(true);
+        addLog("SISTEMA INICIADO EN MODO LOCAL (OFFLINE)", "warning");
         return;
     }
 
@@ -530,12 +567,15 @@ const App = () => {
               await signInAnonymously(authInstance); 
               onAuthStateChanged(authInstance, (currentUser) => {
                   setUser(currentUser);
+                  addLog(`Usuario encriptado conectado: ${currentUser?.uid?.substring(0,6)}...`, "success");
               }); 
-          } catch(e) {}
+          } catch(e) {
+              addLog(`Fallo de Autenticación de Servidor: ${e.message}`, "error");
+          }
       }
     };
     initAuth();
-  }, []);
+  }, [addLog]);
 
   useEffect(() => {
     if (isOfflineMode || !user || !dbInstance) return;
@@ -549,7 +589,7 @@ const App = () => {
         if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
         if (data.warSound) setWarSound(data.warSound);
         if (data.taskSound) setTaskSound(data.taskSound);
-        if (data.pushEnabled !== undefined && data.fcmToken) setPushToken(data.fcmToken);
+        if (data.sysNotifOn !== undefined) setSysNotifOn(data.sysNotifOn);
         if (data.boxes) setBoxes(data.boxes);
         if (data.rootOrder) setRootOrder(data.rootOrder);
         if (data.language) setLang(data.language);
@@ -581,118 +621,110 @@ const App = () => {
 
   useEffect(() => { syncRef.current = sync; }, [user, isOfflineMode]);
 
-  // EL DISPARADOR COMBINADO
   useEffect(() => {
       if (!activeAlert && alertQueue.length > 0) {
           const nextAlert = alertQueue[0];
           setActiveAlert(nextAlert);
           
-          // Dispara audio + háptica in-app
           triggerInfiniteAlarm(nextAlert.type);
-          
-          // Dispara notificación del Service Worker a la barra (de tu prototipo)
           triggerSystemNotification(nextAlert.title, nextAlert.body);
 
           setAlertQueue(prev => prev.slice(1));
       }
-  }, [activeAlert, alertQueue, triggerInfiniteAlarm]);
+  }, [activeAlert, alertQueue, triggerInfiniteAlarm, triggerSystemNotification]);
 
   useEffect(() => {
     if (!activeAlert && alertQueue.length === 0) stopInfiniteAlarm();
   }, [activeAlert, alertQueue, stopInfiniteAlarm]);
 
+  // ==========================================
+  // TICKER UNIFICADO (ALTA PRECISIÓN: 250ms)
+  // Sincronía visual milimétrica sin desfases
+  // ==========================================
   useEffect(() => {
-    const clock = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(clock);
-  }, []);
+      const ticker = setInterval(() => {
+          if (isDraggingRef.current) return; 
 
-  useEffect(() => {
-    const workerCode = `
-      let timer = null;
-      self.onmessage = function(e) {
-        if (e.data === 'start') {
-          if (timer) clearInterval(timer);
-          timer = setInterval(() => self.postMessage('tick'), 1000);
-        } else if (e.data === 'stop') {
-          clearInterval(timer);
-        }
-      };
-    `;
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(blob);
-    const tickerWorker = new Worker(workerUrl);
+          const now = Date.now();
+          setCurrentTime(new Date(now)); 
 
-    tickerWorker.onmessage = () => {
-      if (isDraggingRef.current) return; 
+          let changedTasks = false;
+          let hasNewFinishedTasks = false;
+          let finishedLabels = [];
 
-      const now = Date.now();
-      let changedTasks = false;
-      let hasNewFinishedTasks = false;
-      let finishedLabels = [];
+          const nextTasks = tasksRef.current.map(t => {
+            if (t.isRunning && t.serverEndTime) {
+              const exactRemaining = Math.max(0, Math.floor((t.serverEndTime - now) / 1000));
+              
+              if (exactRemaining === 0 && !t.alerted) {
+                  changedTasks = true;
+                  hasNewFinishedTasks = true;
+                  finishedLabels.push(t.label);
+                  addLog(`CRONO AGOTADO: ${t.label}`, 'warning');
+                  return { ...t, remainingSeconds: 0, isNewFinish: true, alerted: true, isRunning: false };
+              }
+              
+              if (exactRemaining !== t.remainingSeconds && exactRemaining > 0) {
+                  changedTasks = true;
+                  return { ...t, remainingSeconds: exactRemaining };
+              }
+            }
+            return t;
+          });
 
-      const nextTasks = tasksRef.current.map(t => {
-        if (t.isRunning && t.serverEndTime) {
-          const exactRemaining = Math.max(0, Math.floor((t.serverEndTime - now) / 1000));
+          let newlyTriggeredAlarms = [];
+          let nextAlarms = [...warAlarmsRef.current];
           
-          if (exactRemaining === 0 && !t.alerted) {
-              changedTasks = true;
-              hasNewFinishedTasks = true;
-              finishedLabels.push(t.label);
-              return { ...t, remainingSeconds: 0, isNewFinish: true, alerted: true, isRunning: false };
-          }
-          
-          if (exactRemaining !== t.remainingSeconds && exactRemaining > 0) {
-              changedTasks = true;
-              return { ...t, remainingSeconds: exactRemaining };
-          }
-        }
-        return t;
-      });
-
-      let newlyTriggeredAlarms = [];
-      let nextAlarms = [...warAlarmsRef.current];
-      
-      if (targetEndTimeRef.current) {
-          const msRem = targetEndTimeRef.current.getTime() - now;
-          if (msRem < 86400000 && msRem > -86400000) { 
-              warAlarmsRef.current.forEach(a => {
-                  if (a.on && !a.trig) {
-                      let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
-                      let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
-                      if (limitMs > 0 && msRem <= limitMs) newlyTriggeredAlarms.push(a);
-                  }
-              });
-          }
-      }
-
-      if (finishedLabels.length > 0 || newlyTriggeredAlarms.length > 0) {
-          let alertTitle = ""; let notifBody = "";
-
-          if (finishedLabels.length > 0) {
-              alertTitle = t('taskFinished');
-              notifBody = finishedLabels.map(l => `• ${l}`).join('\n');
+          if (targetEndTimeRef.current) {
+              const msRem = targetEndTimeRef.current.getTime() - now;
+              if (msRem < 86400000 && msRem > -86400000) { 
+                  warAlarmsRef.current.forEach(a => {
+                      if (a.on && !a.trig) {
+                          let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
+                          let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
+                          
+                          // LECTURA VISUAL: Extrae el segundo exacto que ve el usuario en pantalla (Math.floor/1000)
+                          const visualSecsRem = Math.floor(msRem / 1000);
+                          const limitSecs = Math.floor(limitMs / 1000);
+                          
+                          // Detona en el instante exacto en que la UI renderiza el segundo objetivo
+                          if (limitSecs > 0 && visualSecsRem <= limitSecs && visualSecsRem >= 0) {
+                              newlyTriggeredAlarms.push(a);
+                          }
+                      }
+                  });
+              }
           }
 
-          if (newlyTriggeredAlarms.length > 0) {
-              const alarmLabels = newlyTriggeredAlarms.map(a => a.custom ? `Faltan ${a.h ? a.h+'h ' : ''}${a.m ? a.m+'m ' : ''}${a.s ? a.s+'s' : ''}`.trim() : `Faltan ${a.mins} Minutos`).join('\n• ');
-              if (notifBody) { notifBody += `\n\n${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
-              else { alertTitle = t('earlyWarnings'); notifBody = `• ${alarmLabels}`; }
+          if (finishedLabels.length > 0 || newlyTriggeredAlarms.length > 0) {
+              let alertTitle = ""; let notifBody = "";
 
-              nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
-              setWarAlarms(nextAlarms); if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
+              if (finishedLabels.length > 0) {
+                  alertTitle = t('taskFinished');
+                  notifBody = finishedLabels.map(l => `• ${l}`).join('\n');
+              }
+
+              if (newlyTriggeredAlarms.length > 0) {
+                  const alarmLabels = newlyTriggeredAlarms.map(a => a.custom ? `Faltan ${a.h ? a.h+'h ' : ''}${a.m ? a.m+'m ' : ''}${a.s ? a.s+'s' : ''}`.trim() : `Faltan ${a.mins} Minutos`).join('\n• ');
+                  if (notifBody) { notifBody += `\n\n${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
+                  else { alertTitle = t('earlyWarnings'); notifBody = `• ${alarmLabels}`; }
+
+                  nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
+                  setWarAlarms(nextAlarms); if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
+                  addLog(`Disparando Aviso Temprano de Sistema.`, 'warning');
+              }
+              
+              const alertType = newlyTriggeredAlarms.length > 0 && finishedLabels.length === 0 ? 'war' : 'task';
+              setAlertQueue(prev => [...prev, { title: alertTitle, body: notifBody, type: alertType }]);
           }
-          
-          const alertType = newlyTriggeredAlarms.length > 0 && finishedLabels.length === 0 ? 'war' : 'task';
-          setAlertQueue(prev => [...prev, { title: alertTitle, body: notifBody, type: alertType }]);
-      }
 
-      if (changedTasks) setTasks(nextTasks);
-      if (hasNewFinishedTasks && syncRef.current) syncRef.current({ tasks: nextTasks });
-    };
+          if (changedTasks) setTasks(nextTasks);
+          if (hasNewFinishedTasks && syncRef.current) syncRef.current({ tasks: nextTasks });
 
-    tickerWorker.postMessage('start');
-    return () => { tickerWorker.postMessage('stop'); tickerWorker.terminate(); URL.revokeObjectURL(workerUrl); };
-  }, [t]);
+      }, 250); // Scanner a 250ms garantiza latencia nula contra el renderizado de pantalla
+
+      return () => clearInterval(ticker);
+  }, [t, addLog]);
 
   const handleNum = (setter) => (e) => {
     let v = e.target.value.replace(/\D/g, '');
@@ -705,14 +737,53 @@ const App = () => {
     if (h === 0 && m === 0) return;
     const end = new Date(Date.now() + (h * 3600000) + (m * 60000));
     setTargetEndTime(end);
-    const rA = warAlarms.map(a => ({ ...a, trig: false, on: false })); 
+    
+    // COMPUERTA LÓGICA DE SINCRONIZACIÓN
+    // Respeta las alarmas encendidas. Solo rearma (trig:false) las que tienen tiempo válido.
+    const msRem = end.getTime() - Date.now();
+    const rA = warAlarms.map(a => {
+        let limitMs = a.custom ? (((parseInt(a.h)||0)*3600) + ((parseInt(a.m)||0)*60) + (parseInt(a.s)||0))*1000 : a.mins*60000;
+        
+        if (a.on && msRem <= limitMs) {
+            // El nuevo tiempo inyectado invalida esta alarma (el tiempo ya pasó). Se queda encendida pero ignorada.
+            return { ...a, trig: true }; 
+        }
+        // La alarma es válida, se rearma para disparar.
+        return { ...a, trig: false }; 
+    });
+    
     setWarAlarms(rA);
     if(syncRef.current) syncRef.current({ targetEndTime: end.getTime(), warAlarms: rA });
+    addLog(`Hora Global sincronizada a las ${end.toLocaleTimeString()}`, 'success');
   };
 
   const toggleAlarm = (id) => {
-      const next = warAlarms.map(a => a.id === id ? { ...a, on: !a.on, trig: false } : a);
-      setWarAlarms(next); if(syncRef.current) syncRef.current({ warAlarms: next });
+      const now = Date.now();
+      const msRem = targetEndTimeRef.current ? targetEndTimeRef.current.getTime() - now : 0;
+      
+      const next = warAlarms.map(a => {
+          if (a.id === id) {
+              const isTurningOn = !a.on;
+              let limitMs = a.custom ? (((parseInt(a.h)||0)*3600) + ((parseInt(a.m)||0)*60) + (parseInt(a.s)||0))*1000 : a.mins*60000;
+              
+              let newTrig = a.trig;
+              if (isTurningOn) {
+                  // Si intentas encender una alarma que ya venció respecto al tiempo global actual,
+                  // se enciende visualmente pero se marca internamente como detonada (trig:true)
+                  // para no lanzarte la alerta roja en la cara. Quedará lista para el siguiente "Sincronizar".
+                  if (targetEndTimeRef.current && msRem <= limitMs) {
+                      newTrig = true; 
+                      addLog(`Alarma armada tarde. Quedará en espera de nueva Sincronización.`, 'info');
+                  } else {
+                      newTrig = false; 
+                  }
+              }
+              return { ...a, on: isTurningOn, trig: newTrig };
+          }
+          return a;
+      });
+      setWarAlarms(next); 
+      if(syncRef.current) syncRef.current({ warAlarms: next });
   };
 
   const handleCustomAlarmChange = (field, val) => {
@@ -748,6 +819,7 @@ const App = () => {
         const label = (draft.label.trim() || `PLAN ${startingIndex + index}`).toUpperCase();
         nlTasks.push({ id: baseTime + index, label, initialSeconds: total, remainingSeconds: total, serverEndTime: baseTime + (total * 1000), isRunning: true, boxId: null, isNewFinish: false, alerted: false });
         nlRootOrder.push({ id: baseTime + index, type: 'task' });
+        addLog(`Crono inyectado: ${label} (${total}s)`, 'success');
     });
     setTasks(nlTasks); setRootOrder(nlRootOrder);
     if(syncRef.current) syncRef.current({ tasks: nlTasks, rootOrder: nlRootOrder });
@@ -759,6 +831,8 @@ const App = () => {
     const newBox = { id: boxId, name: (newBoxLabel.trim() || `SECTION ${boxes.length + 1}`).toUpperCase(), color: newBoxColor, isCollapsed: false };
     let nlBoxes = [...boxes, newBox], nlTasks = [...tasks], nlRootOrder = [...rootOrder, {id: boxId, type: 'box'}];
     const baseTime = Date.now(), startingIndex = tasks.length + 1;
+
+    addLog(`Caja creada: ${newBox.name}`, 'success');
 
     if (includeInitialCrono) {
         boxCronoDrafts.forEach((draft, index) => {
@@ -834,7 +908,7 @@ const App = () => {
   };
 
   const handleItemPointerDown = (e, id, type) => {
-    if (e.target.closest('button') || e.target.closest('input')) return;
+    if (e.target.closest('button') || e.target.closest('input') || e.target.tagName.toLowerCase() === 'button' || e.target.tagName.toLowerCase() === 'input') return;
     if (pendingDragRef.current || isDraggingRef.current) return; 
     const clientX = e.clientX || (e.touches && e.touches[0].clientX), clientY = e.clientY || (e.touches && e.touches[0].clientY);
     setIsListening(true); 
@@ -1051,14 +1125,14 @@ const App = () => {
 
           <div className="flex items-center gap-1 border-l border-zinc-800 pl-2 shrink-0 pointer-events-auto h-full">
             {editingId === t.id ? (
-              <div className="flex gap-1"><button onClick={() => setEditingId(null)} className="p-2 bg-zinc-700/80 rounded-lg text-white hover:bg-zinc-600 transition-colors active:scale-90"><X size={16}/></button><button onClick={() => saveEdit(t.id)} className="p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500 transition-colors active:scale-90 shadow-md shadow-blue-900/50"><Check size={16}/></button></div>
+              <div className="flex gap-1"><button onClick={() => setEditingId(null)} className="p-2 bg-zinc-700/80 rounded-lg text-white active:bg-zinc-600 active:scale-90 transition-all"><X size={16}/></button><button onClick={() => saveEdit(t.id)} className="p-2 bg-blue-600 rounded-lg text-white active:bg-blue-500 active:scale-90 transition-all shadow-md"><Check size={16}/></button></div>
             ) : (
               <>
-                {t.isNewFinish && ( <button onClick={(e) => { e.stopPropagation(); dismissNewFinish(t.id); }} className="p-1 px-2.5 bg-red-600 text-white rounded-lg font-black text-[9px] uppercase flex items-center gap-1 animate-pulse hover:bg-red-500 mr-1 shadow-[0_0_10px_rgba(220,38,38,0.5)]"><Check size={12}/> Visto</button> )}
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-300 hover:text-white' : 'text-zinc-700 hover:text-amber-500'}`}><RotateCcw size={16} /></button>
-                <button onClick={() => { const hVal = Math.floor(t.initialSeconds / 3600); const mVal = Math.floor((t.initialSeconds % 3600) / 60); const sVal = t.initialSeconds % 60; setEditBuf({ label: t.label, h: hVal > 0 ? String(hVal) : '', m: mVal > 0 ? String(mVal) : '', s: sVal > 0 ? String(sVal) : '' }); setEditingId(t.id); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-400 hover:text-white' : 'text-zinc-700 hover:text-blue-400'}`}><Edit2 size={16} /></button>
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-red-300' : 'text-zinc-600')}`}>{t.isRunning && t.remainingSeconds > 0 ? <Pause size={18} /> : <Play size={18} />}</button>
-                <button onClick={async () => { const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-500 hover:text-white' : 'text-zinc-800 hover:text-red-600'}`}><Trash2 size={16} /></button>
+                {t.isNewFinish && ( <button onClick={(e) => { e.stopPropagation(); dismissNewFinish(t.id); }} className="p-1 px-2.5 bg-red-600 text-white rounded-lg font-black text-[9px] uppercase flex items-center gap-1 animate-pulse active:bg-red-500 mr-1 shadow-[0_0_10px_rgba(220,38,38,0.5)]"><Check size={12}/> Visto</button> )}
+                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-300 active:text-white' : 'text-zinc-700 active:text-amber-500'}`}><RotateCcw size={16} /></button>
+                <button onClick={() => { const hVal = Math.floor(t.initialSeconds / 3600); const mVal = Math.floor((t.initialSeconds % 3600) / 60); const sVal = t.initialSeconds % 60; setEditBuf({ label: t.label, h: hVal > 0 ? String(hVal) : '', m: mVal > 0 ? String(mVal) : '', s: sVal > 0 ? String(sVal) : '' }); setEditingId(t.id); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-400 active:text-white' : 'text-zinc-700 active:text-blue-400'}`}><Edit2 size={16} /></button>
+                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-red-300' : 'text-zinc-600')} active:scale-90 transition-transform`}>{t.isRunning && t.remainingSeconds > 0 ? <Pause size={18} /> : <Play size={18} />}</button>
+                <button onClick={async () => { const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-500 active:text-white' : 'text-zinc-800 active:text-red-600'}`}><Trash2 size={16} /></button>
               </>
             )}
           </div>
@@ -1076,13 +1150,40 @@ const App = () => {
         .drop-extract-target { background-color: rgba(239, 68, 68, 0.15) !important; border-color: #ef4444 !important; }
         * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
         input { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
       `}</style>
+
+      {/* CONSOLA DE LOGS TÁCTICA */}
+      {showLogs && (
+        <div className="fixed bottom-0 left-0 w-full h-64 bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-800 z-[900] shadow-[0_-20px_50px_rgba(0,0,0,0.5)] flex flex-col animate-in slide-in-from-bottom-full duration-300">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-black/50">
+                <div className="flex items-center gap-2">
+                    <Activity size={16} className="text-zinc-500"/>
+                    <span className="text-xs font-black uppercase text-zinc-400 tracking-widest">Terminal de Registro</span>
+                </div>
+                <button onClick={() => setShowLogs(false)} className="text-zinc-500 active:text-white p-1"><X size={16}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-[10px] custom-scrollbar">
+                {actionLog.map((log, i) => (
+                    <div key={i} className="flex gap-3 leading-tight border-b border-zinc-900 pb-2">
+                        <span className="text-zinc-600 shrink-0">{log.time}</span>
+                        <span className={`${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-emerald-400' : log.type === 'warning' ? 'text-amber-400' : 'text-blue-400'}`}>
+                            {log.msg}
+                        </span>
+                    </div>
+                ))}
+                {actionLog.length === 0 && <p className="text-zinc-600 italic text-center mt-10">Esperando eventos en el campo...</p>}
+            </div>
+        </div>
+      )}
 
       {/* MODAL DE AYUDA GLOBAL CONSOLIDADA */}
       {activeHelp && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setActiveHelp(null)}>
           <div className="bg-zinc-900 border border-blue-500 p-6 rounded-3xl max-w-sm w-full relative shadow-[0_0_40px_rgba(59,130,246,0.3)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-             <button onClick={() => setActiveHelp(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
+             <button onClick={() => setActiveHelp(null)} className="absolute top-4 right-4 text-zinc-500 active:text-white p-2"><X size={20}/></button>
              <div className="flex items-center gap-3 mb-4 text-blue-400">
                <Info size={24} />
                <h3 className="font-black uppercase text-lg leading-tight">{t(`help_${activeHelp}_title`)}</h3>
@@ -1090,7 +1191,7 @@ const App = () => {
              <div className="text-zinc-300 text-sm font-bold whitespace-pre-wrap leading-relaxed">
                  {t(`help_${activeHelp}_desc`)}
              </div>
-             <button onClick={() => setActiveHelp(null)} className="w-full mt-6 bg-blue-900/30 text-blue-400 py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-600 hover:text-white transition-colors">{t('understood')}</button>
+             <button onClick={() => setActiveHelp(null)} className="w-full mt-6 bg-blue-900/30 text-blue-400 py-3 rounded-xl font-black uppercase text-xs active:bg-blue-600 active:text-white transition-colors">{t('understood')}</button>
           </div>
         </div>
       )}
@@ -1111,15 +1212,15 @@ const App = () => {
             <div className="bg-zinc-900 border border-amber-500 w-full max-w-sm rounded-[32px] shadow-[0_0_50px_rgba(245,158,11,0.15)] relative animate-in zoom-in duration-300 flex flex-col max-h-[85vh]">
                <div className="p-5 pb-3 border-b border-zinc-800 flex justify-between items-center shrink-0">
                    <div className="flex items-center gap-2"><Music className="text-amber-500" size={24} /><h2 className="text-lg font-black text-white uppercase leading-none tracking-wide">{t('soundConfig')}</h2></div>
-                   <button onClick={() => { setShowSoundMenu(false); stopInfiniteAlarm(); }} className="text-zinc-500 hover:text-white p-1"><X size={24}/></button>
+                   <button onClick={() => { setShowSoundMenu(false); stopInfiniteAlarm(); }} className="text-zinc-500 active:text-white p-1"><X size={24}/></button>
                </div>
                <div className="overflow-y-auto p-4 space-y-6">
                    <div>
                        <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><BellRing size={12}/> {t('earlyWarnings')}</h3>
                        <div className="space-y-1.5">
                            {SOUND_PROFILES.map(prof => (
-                               <div key={`war-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors cursor-pointer ${warSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800 hover:border-zinc-600'}`} onClick={() => { setWarSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ warSound: prof.id }); }}>
-                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 hover:text-amber-500"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${warSound === prof.id ? 'text-amber-500' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{warSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
+                               <div key={`war-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors cursor-pointer ${warSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800 active:border-zinc-600'}`} onClick={() => { setWarSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ warSound: prof.id }); }}>
+                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 active:text-amber-500"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${warSound === prof.id ? 'text-amber-500' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{warSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
                                </div>
                            ))}
                        </div>
@@ -1128,8 +1229,8 @@ const App = () => {
                        <h3 className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-3 flex items-center gap-2"><Check size={12}/> {t('taskFinished')}</h3>
                        <div className="space-y-1.5">
                            {SOUND_PROFILES.map(prof => (
-                               <div key={`task-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors cursor-pointer ${taskSound === prof.id ? 'bg-blue-600/20 border-blue-500' : 'bg-zinc-800/50 border-zinc-800 hover:border-zinc-600'}`} onClick={() => { setTaskSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ taskSound: prof.id }); }}>
-                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 hover:text-blue-500"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${taskSound === prof.id ? 'text-blue-400' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{taskSound === prof.id && <Check size={16} className="text-blue-500 mr-2"/>}
+                               <div key={`task-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors cursor-pointer ${taskSound === prof.id ? 'bg-blue-600/20 border-blue-500' : 'bg-zinc-800/50 border-zinc-800 active:border-zinc-600'}`} onClick={() => { setTaskSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ taskSound: prof.id }); }}>
+                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 active:text-blue-500"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${taskSound === prof.id ? 'text-blue-400' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{taskSound === prof.id && <Check size={16} className="text-blue-500 mr-2"/>}
                                </div>
                            ))}
                        </div>
@@ -1144,7 +1245,7 @@ const App = () => {
             <div className="bg-zinc-900 w-full max-w-xs p-6 rounded-[32px] shadow-2xl animate-in zoom-in duration-300 border border-amber-500">
               <AlertTriangle size={48} className="mx-auto mb-4 text-amber-500"/><h2 className="text-xl font-black text-white uppercase mb-2 leading-none">{t('confirmResetTitle')}</h2>
               <p className="text-zinc-400 font-bold mb-6 text-sm leading-tight whitespace-pre-wrap">{t('confirmResetDesc')} <span className="text-amber-500">{confirmBoxReset.name}</span>?</p>
-              <div className="flex gap-3"><button onClick={() => setConfirmBoxReset(null)} className="flex-1 bg-amber-600 text-white py-3 rounded-xl font-black text-xs uppercase shadow-lg active:scale-95 transition-transform hover:bg-amber-500">{t('cancel')}</button><button onClick={executeBoxReset} className="flex-1 bg-zinc-800 text-zinc-400 py-3 rounded-xl font-black text-xs uppercase transition-colors hover:bg-zinc-700 active:scale-95 hover:text-red-500">{t('resetAll')}</button></div>
+              <div className="flex gap-3"><button onClick={() => setConfirmBoxReset(null)} className="flex-1 bg-amber-600 text-white py-3 rounded-xl font-black text-xs uppercase shadow-lg active:scale-95 transition-transform active:bg-amber-500">{t('cancel')}</button><button onClick={executeBoxReset} className="flex-1 bg-zinc-800 text-zinc-400 py-3 rounded-xl font-black text-xs uppercase transition-colors active:bg-zinc-700 active:scale-95 active:text-red-500">{t('resetAll')}</button></div>
             </div>
           </div>
       )}
@@ -1154,33 +1255,24 @@ const App = () => {
           <div className="flex items-center gap-1.5">
             <ShieldAlert className="text-amber-500 shrink-0" size={20} />
             <h1 className="text-lg xs:text-xl font-black text-amber-500 uppercase leading-none tracking-tighter hidden xs:block mr-1">{t('appTitle')}</h1>
-            
-            <button onClick={() => setActiveHelp('header')} className="text-zinc-600 hover:text-blue-400 transition-colors p-1"><Info size={14}/></button>
+            <button onClick={() => setActiveHelp('header')} className="text-zinc-600 active:text-blue-400 transition-colors p-1"><Info size={14}/></button>
 
-            <button onClick={toggleLanguage} className="flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-md px-1.5 py-1 xs:ml-2 hover:bg-zinc-700 transition-colors">
+            <button onClick={toggleLanguage} className="flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-md px-1.5 py-1 xs:ml-2 active:bg-zinc-700 transition-colors">
                 <Globe size={12} className="text-zinc-400"/>
                 <span className="text-[10px] font-black text-white uppercase">{lang}</span>
+            </button>
+            <button onClick={() => setShowLogs(!showLogs)} className={`ml-1 flex items-center p-1.5 rounded-md border transition-colors ${showLogs ? 'bg-zinc-700 border-zinc-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
+                <TerminalSquare size={14}/>
             </button>
           </div>
           
           <div className="flex gap-1">
             <button onClick={toggleWakeLock} className={`p-1.5 rounded-lg border transition-colors ${wakeLockActive ? 'bg-blue-600 text-white border-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><Eye size={18} /></button>
             <button onClick={toggleSoundProfile} className={`p-1.5 rounded-lg border transition-colors ${soundProfile !== 'muted' ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>{soundProfile === 'siren' ? <Volume2 size={18}/> : soundProfile === 'radar' ? <Volume1 size={18}/> : <VolumeX size={18}/>}</button>
-            <button onClick={() => setShowSoundMenu(true)} className="p-1.5 bg-zinc-800 text-amber-500 border border-zinc-700 rounded-lg shadow-lg hover:bg-zinc-700 transition-colors"><Music size={18}/></button>
-            <button onClick={() => { const next = !vibrateOn; setVibrateOn(next); if(!next) stopInfiniteAlarm(); if(syncRef.current) syncRef.current({ vibrateOn: next }); }} className={`p-1.5 rounded-lg border transition-colors ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><VibrateIcon size={18}/></button>
+            <button onClick={() => setShowSoundMenu(true)} className="p-1.5 bg-zinc-800 text-amber-500 border border-zinc-700 rounded-lg shadow-lg active:bg-zinc-700 transition-colors"><Music size={18}/></button>
+            <button onClick={() => { const next = !vibrateOn; setVibrateOn(next); if(!next) stopInfiniteAlarm(); if(syncRef.current) syncRef.current({ vibrateOn: next }); addLog(`Vibración de alertas: ${next ? 'ON' : 'OFF'}`, 'info'); }} className={`p-1.5 rounded-lg border transition-colors ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><VibrateIcon size={18}/></button>
             
-            {/* Botón de Notificaciones Funcional (Rehabilitado) */}
-            <button onClick={async () => {
-              if (typeof Notification === 'undefined') return;
-              const status = await Notification.requestPermission();
-              setNotifPermissionGranted(status === 'granted');
-              if (status === 'granted' && messagingInstance && user) {
-                  try {
-                      const currentToken = await getToken(messagingInstance, { vapidKey: VAPID_KEY });
-                      if (currentToken && syncRef.current) syncRef.current({ fcmToken: currentToken, pushEnabled: true });
-                  } catch (e) {}
-              }
-            }} className={`p-1.5 rounded-lg border transition-colors ${notifPermissionGranted ? 'bg-emerald-600 text-white border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700 hover:text-white'}`}>
+            <button onClick={toggleSystemNotifications} className={`p-1.5 rounded-lg border transition-colors ${sysNotifOn ? 'bg-emerald-600 text-white border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700 active:text-white'}`}>
                 <Smartphone size={18}/>
             </button>
           </div>
@@ -1200,7 +1292,7 @@ const App = () => {
           <div className="pt-3 border-t border-zinc-800/50 flex justify-between items-end">
             <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-zinc-500 font-black uppercase tracking-wide mb-1">{t('endTime')}</span>
-                <button onClick={() => setActiveHelp('time')} className="text-zinc-600 hover:text-blue-400 mb-1 transition-colors"><Info size={12}/></button>
+                <button onClick={() => setActiveHelp('time')} className="text-zinc-600 active:text-blue-400 mb-1 transition-colors"><Info size={12}/></button>
             </div>
             <div className="flex items-baseline gap-1 text-amber-500"><span className="text-3xl font-mono font-black leading-none tracking-tight">{globalTimePart}</span><span className="text-sm font-black uppercase mb-0.5">{globalAmpmPart}</span></div>
           </div>
@@ -1208,7 +1300,7 @@ const App = () => {
           <div className="mt-5 border-t border-zinc-800/50 pt-4">
               <div className="flex justify-between items-center mb-3">
                   <span className="text-[9px] font-black text-amber-500/50 uppercase tracking-widest flex items-center gap-1"><BellRing size={10}/> {t('earlyWarnings')}</span>
-                  <button onClick={syncWar} className="bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700 hover:border-amber-500 text-[9px] font-black py-1 px-3 rounded-full flex items-center gap-1 active:scale-95 transition-all"><RotateCcw size={10} /> {t('sync')}</button>
+                  <button onClick={syncWar} className="bg-zinc-800 text-zinc-400 active:text-white border border-zinc-700 active:border-amber-500 text-[9px] font-black py-1 px-3 rounded-full flex items-center gap-1 active:scale-95 transition-all"><RotateCcw size={10} /> {t('sync')}</button>
               </div>
               <div className="flex gap-2 mb-3">
                   <div className="relative flex-1"><input type="text" inputMode="numeric" placeholder="0" value={inputH} onChange={handleNum(setInputH)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 text-xl font-mono text-center outline-none focus:border-amber-500 transition-colors" /><p className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-600 font-bold uppercase">H</p></div>
@@ -1220,11 +1312,11 @@ const App = () => {
                           return (
                               <div key={a.id} className={`flex-[2] flex items-center justify-between rounded-xl border transition-colors ${a.on ? 'bg-amber-600 border-amber-500' : 'bg-zinc-950 border-zinc-800'}`}>
                                   <div className="flex flex-1 items-center justify-center gap-0.5 px-1 py-1"><input type="text" inputMode="numeric" placeholder="H" value={a.h} disabled={a.on} onChange={e => handleCustomAlarmChange('h', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} />:<input type="text" inputMode="numeric" placeholder="M" value={a.m} disabled={a.on} onChange={e => handleCustomAlarmChange('m', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} />:<input type="text" inputMode="numeric" placeholder="S" value={a.s} disabled={a.on} onChange={e => handleCustomAlarmChange('s', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} /></div>
-                                  <button onClick={() => toggleAlarm(a.id)} className={`h-full px-2.5 rounded-r-xl border-l flex items-center justify-center transition-colors ${a.on ? 'border-amber-700 hover:bg-amber-700' : 'border-zinc-800 hover:bg-zinc-800'}`}><div className={`w-2 h-2 rounded-full ${a.on ? 'bg-white shadow-[0_0_5px_white]' : 'bg-zinc-700'}`} /></button>
+                                  <button onClick={() => toggleAlarm(a.id)} className={`h-full px-2.5 rounded-r-xl border-l flex items-center justify-center transition-colors ${a.on ? 'border-amber-700 active:bg-amber-700' : 'border-zinc-800 active:bg-zinc-800'}`}><div className={`w-2 h-2 rounded-full ${a.on ? 'bg-white shadow-[0_0_5px_white]' : 'bg-zinc-700'}`} /></button>
                               </div>
                           );
                       }
-                      return ( <button key={a.id} onClick={() => toggleAlarm(a.id)} className={`flex-1 rounded-xl text-xs font-black transition-all border ${a.on ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-zinc-950 text-zinc-500 border-zinc-800 hover:border-zinc-600'}`}>{a.mins}M</button> );
+                      return ( <button key={a.id} onClick={() => toggleAlarm(a.id)} className={`flex-1 rounded-xl text-xs font-black transition-all border ${a.on ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-zinc-950 text-zinc-500 border-zinc-800 active:border-zinc-600'}`}>{a.mins}M</button> );
                   })}
               </div>
           </div>
@@ -1232,7 +1324,7 @@ const App = () => {
 
         <div className="grid grid-cols-2 gap-2 relative">
             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                 <button onClick={() => setActiveHelp('creation')} className="bg-zinc-900 border border-zinc-700 text-zinc-500 hover:text-blue-400 transition-colors p-1.5 rounded-full shadow-lg"><Info size={14}/></button>
+                 <button onClick={() => setActiveHelp('creation')} className="bg-zinc-900 border border-zinc-700 text-zinc-500 active:text-blue-400 transition-colors p-1.5 rounded-full shadow-lg"><Info size={14}/></button>
             </div>
             
             <button onClick={() => { setShowCronoForm(!showCronoForm); setShowBoxForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-all ${showCronoForm ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
@@ -1245,7 +1337,7 @@ const App = () => {
 
         {showCronoForm && (
             <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-3 space-y-3 animate-in slide-in-from-top-2">
-                <div className="flex justify-between items-center px-1"><span className="text-[10px] font-black uppercase text-zinc-500">{t('createCronoTitle')}</span><div className="flex gap-2"><button onClick={() => changeDraftCount(false, false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"><Minus size={14}/></button><button onClick={() => changeDraftCount(false, true)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"><Plus size={14}/></button></div></div>
+                <div className="flex justify-between items-center px-1"><span className="text-[10px] font-black uppercase text-zinc-500">{t('createCronoTitle')}</span><div className="flex gap-2"><button onClick={() => changeDraftCount(false, false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 active:text-white active:bg-zinc-700 transition-colors"><Minus size={14}/></button><button onClick={() => changeDraftCount(false, true)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 active:text-white active:bg-zinc-700 transition-colors"><Plus size={14}/></button></div></div>
                 <div className="space-y-2">
                     {cronoDrafts.map((draft, i) => (
                         <div key={draft.id} className="space-y-2 p-2 bg-black/40 rounded-xl border border-zinc-800 animate-in fade-in">
@@ -1272,9 +1364,9 @@ const App = () => {
                 <div className="flex items-center justify-between px-1">
                     <label className="flex items-center gap-2 cursor-pointer group">
                         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${includeInitialCrono ? 'bg-blue-600 border-blue-600' : 'border-zinc-700'}`}><input type="checkbox" className="hidden" checked={includeInitialCrono} onChange={() => setIncludeInitialCrono(!includeInitialCrono)} />{includeInitialCrono && <Check size={12} className="text-white"/>}</div>
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase group-active:text-blue-400">{t('includeCronos')}</span>
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase active:text-blue-400">{t('includeCronos')}</span>
                     </label>
-                    {includeInitialCrono && ( <div className="flex gap-2"><button onClick={() => changeDraftCount(true, false)} className="p-1 bg-zinc-800 rounded text-zinc-400 hover:text-white"><Minus size={12}/></button><button onClick={() => changeDraftCount(true, true)} className="p-1 bg-zinc-800 rounded text-zinc-400 hover:text-white"><Plus size={12}/></button></div> )}
+                    {includeInitialCrono && ( <div className="flex gap-2"><button onClick={() => changeDraftCount(true, false)} className="p-1 bg-zinc-800 rounded text-zinc-400 active:text-white"><Minus size={12}/></button><button onClick={() => changeDraftCount(true, true)} className="p-1 bg-zinc-800 rounded text-zinc-400 active:text-white"><Plus size={12}/></button></div> )}
                 </div>
 
                 {includeInitialCrono && (
@@ -1332,8 +1424,8 @@ const App = () => {
 
                                 {editingBoxId === box.id ? (
                                     <div className="flex-1 flex flex-col p-3 bg-zinc-900/90 w-full animate-in fade-in">
-                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full ${newBoxColor === c.hex ? 'border-2 border-white scale-110 shadow-lg' : 'opacity-40'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700 active:scale-90 transition-all shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white active:scale-90 shadow-md hover:bg-blue-500 transition-all"><Check size={14}/></button></div></div>
-                                        <div className="flex items-center justify-between px-1 py-2 border-t border-zinc-800/80"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest flex items-center gap-1.5"><Plus size={10}/> {t('addCrono')}</span><div className="flex gap-1.5"><button onClick={() => handleEditBoxDraftCount(false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shadow-sm"><Minus size={12}/></button><button onClick={() => handleEditBoxDraftCount(true)} className="p-1.5 bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600 hover:text-white transition-colors shadow-sm"><Plus size={12}/></button></div></div>
+                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full ${newBoxColor === c.hex ? 'border-2 border-white scale-110 shadow-lg' : 'opacity-40'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 active:text-white active:bg-zinc-700 active:scale-90 transition-all shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white active:scale-90 shadow-md active:bg-blue-500 transition-all"><Check size={14}/></button></div></div>
+                                        <div className="flex items-center justify-between px-1 py-2 border-t border-zinc-800/80"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest flex items-center gap-1.5"><Plus size={10}/> {t('addCrono')}</span><div className="flex gap-1.5"><button onClick={() => handleEditBoxDraftCount(false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 active:text-white active:bg-zinc-700 transition-colors shadow-sm"><Minus size={12}/></button><button onClick={() => handleEditBoxDraftCount(true)} className="p-1.5 bg-blue-600/20 text-blue-400 rounded-lg active:bg-blue-600 active:text-white transition-colors shadow-sm"><Plus size={12}/></button></div></div>
                                         <div className="space-y-1.5 mt-1">
                                             {editBoxDrafts.map((draft, i) => (
                                                 <div key={draft.id} className="flex gap-1.5 items-center bg-black/40 p-1.5 rounded-lg border border-zinc-800/80">
@@ -1352,10 +1444,10 @@ const App = () => {
                                         <div className="absolute right-3 flex items-center pointer-events-auto h-full">
                                             {isMenuOpen ? (
                                                 <div className="flex items-center gap-1.5 animate-in slide-in-from-right-8 fade-in duration-200">
-                                                    <button onClick={() => setConfirmBoxReset({id: box.id, name: box.name})} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-amber-500 hover:border-amber-500/50 transition-colors shadow-sm" title="Reiniciar todos"><RotateCcw size={16}/></button><button onClick={() => handleBoxPlayPause(box.id, !allPausedOrFinished)} className={`p-2 bg-zinc-800 border border-zinc-700 rounded-lg transition-colors shadow-sm ${!allPausedOrFinished ? 'text-zinc-400 hover:text-yellow-400 hover:border-yellow-500/50' : 'text-zinc-400 hover:text-blue-400 hover:border-blue-500/50'}`} title={!allPausedOrFinished ? 'Pausar todos' : 'Reanudar todos'}>{!allPausedOrFinished ? <Pause size={16}/> : <Play size={16}/>}</button><div className="w-px h-6 bg-zinc-700 mx-1"></div><button onClick={() => { setEditingBoxId(box.id); setEditBuf({label: box.name}); setNewBoxColor(box.color); setEditBoxDrafts([]); setOpenBoxMenuId(null); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-blue-400 transition-colors shadow-sm"><Edit2 size={16}/></button><button onClick={async () => { const nb = boxes.filter(b => b.id !== box.id); let nr = rootOrder.filter(i => i.id !== box.id); const nt = tasks.map(t => { if (t.boxId === box.id) { nr.push({ id: t.id, type: 'task' }); return { ...t, boxId: null }; } return t; }); setBoxes(nb); setRootOrder(nr); setTasks(nt); if(syncRef.current) syncRef.current({boxes: nb, rootOrder: nr, tasks: nt}); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-red-500 transition-colors shadow-sm"><Trash2 size={16}/></button><button onClick={() => setOpenBoxMenuId(null)} className="p-2 ml-1 text-zinc-500 hover:text-white transition-colors bg-zinc-700/30 hover:bg-zinc-700/80 rounded-full"><X size={18}/></button>
+                                                    <button onClick={() => setConfirmBoxReset({id: box.id, name: box.name})} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 active:text-amber-500 active:border-amber-500/50 transition-colors shadow-sm" title="Reiniciar todos"><RotateCcw size={16}/></button><button onClick={() => handleBoxPlayPause(box.id, !allPausedOrFinished)} className={`p-2 bg-zinc-800 border border-zinc-700 rounded-lg transition-colors shadow-sm ${!allPausedOrFinished ? 'text-zinc-400 active:text-yellow-400 active:border-yellow-500/50' : 'text-zinc-400 active:text-blue-400 active:border-blue-500/50'}`} title={!allPausedOrFinished ? 'Pausar todos' : 'Reanudar todos'}>{!allPausedOrFinished ? <Pause size={16}/> : <Play size={16}/>}</button><div className="w-px h-6 bg-zinc-700 mx-1"></div><button onClick={() => { setEditingBoxId(box.id); setEditBuf({label: box.name}); setNewBoxColor(box.color); setEditBoxDrafts([]); setOpenBoxMenuId(null); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 active:text-blue-400 transition-colors shadow-sm"><Edit2 size={16}/></button><button onClick={async () => { const nb = boxes.filter(b => b.id !== box.id); let nr = rootOrder.filter(i => i.id !== box.id); const nt = tasks.map(t => { if (t.boxId === box.id) { nr.push({ id: t.id, type: 'task' }); return { ...t, boxId: null }; } return t; }); setBoxes(nb); setRootOrder(nr); setTasks(nt); if(syncRef.current) syncRef.current({boxes: nb, rootOrder: nr, tasks: nt}); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 active:text-red-500 transition-colors shadow-sm"><Trash2 size={16}/></button><button onClick={() => setOpenBoxMenuId(null)} className="p-2 ml-1 text-zinc-500 active:text-white transition-colors bg-zinc-700/30 active:bg-zinc-700/80 rounded-full"><X size={18}/></button>
                                                 </div>
                                             ) : (
-                                                <div className="flex items-center gap-1.5 animate-in fade-in"><button onClick={() => setOpenBoxMenuId(box.id)} className="p-2 text-zinc-500 hover:text-white transition-colors hover:bg-zinc-800 rounded-lg cursor-pointer"><Settings size={20} /></button><div className="w-px h-6 bg-zinc-800"></div><button onClick={() => toggleBoxCollapse(box.id)} className="p-2 text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800 rounded-lg cursor-pointer">{box.isCollapsed ? <ChevronDown size={22}/> : <ChevronUp size={22}/>}</button></div>
+                                                <div className="flex items-center gap-1.5 animate-in fade-in"><button onClick={() => setOpenBoxMenuId(box.id)} className="p-2 text-zinc-500 active:text-white transition-colors active:bg-zinc-800 rounded-lg cursor-pointer"><Settings size={20} /></button><div className="w-px h-6 bg-zinc-800"></div><button onClick={() => toggleBoxCollapse(box.id)} className="p-2 text-zinc-400 active:text-white transition-colors active:bg-zinc-800 rounded-lg cursor-pointer">{box.isCollapsed ? <ChevronDown size={22}/> : <ChevronUp size={22}/>}</button></div>
                                             )}
                                         </div>
                                     </div>
@@ -1419,7 +1511,7 @@ const App = () => {
               <div className="text-red-950 font-bold mb-6 text-sm leading-tight whitespace-pre-wrap text-left bg-red-500/30 p-4 rounded-xl border border-red-500/50">{activeAlert.body}</div>
               <button 
                 onClick={() => { stopInfiniteAlarm(); setActiveAlert(null); }} 
-                className="w-full bg-red-950 text-red-400 py-4 rounded-2xl font-black text-lg uppercase shadow-xl tracking-widest active:scale-95 transition-transform border border-red-800"
+                className="w-full bg-red-950 text-red-400 py-4 rounded-2xl font-black text-lg uppercase shadow-xl tracking-widest active:scale-95 transition-transform active:bg-red-800 border border-red-800"
               >
                 {alertQueue.length > 0 ? t('next') : t('understood')}
               </button>
