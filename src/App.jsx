@@ -93,7 +93,7 @@ const dict = {
     typeRelaxing: "Relaxing",
     typeSilent: "Silent",
     help_header_title: "Global Control Panel",
-    help_header_desc: "• Globe: Changes system language.\n• Terminal: Opens Debug Logs.\n• Eye: Keeps the app running in the background.\n• Volume: System audio toggle.\n• Music Note: Acoustic settings.\n• Smartphone: Toggles system push notifications.",
+    help_header_desc: "• Globe: Changes system language.\n• Terminal: Opens Debug Logs.\n• Eye: Prevents screen from sleeping and keeps app running in background.\n• Volume: System audio toggle.\n• Music Note: Acoustic settings.\n• Smartphone: Toggles system push notifications.",
     help_time_title: "Strategic Time Module",
     help_time_desc: "• End Time: Displays global target time.\n• Early Warnings: Select preset alerts (15M, 10M, 5M) before the global End Time.\n• H/M Inputs: Manually set global target time.",
     help_creation_title: "Deployment Module",
@@ -143,7 +143,7 @@ const dict = {
     typeRelaxing: "Relajante",
     typeSilent: "Silencio",
     help_header_title: "Panel de Control Global",
-    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Mantiene la app funcionando para que no se cierre en segundo plano.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones push en barra.",
+    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Evita que la pantalla se apague y mantiene el sistema operando con precisión en segundo plano.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones push en barra.",
     help_time_title: "Módulo de Tiempo Estratégico",
     help_time_desc: "• Hora Fin: Establece el límite global.\n• Avisos Tempranos: Calcula alertas (15M, 10M, 5M) antes de la Hora Fin.\n• Entradas H/M: Define tu objetivo manual.",
     help_creation_title: "Módulo de Despliegue",
@@ -201,22 +201,12 @@ const COLORS = [
   { name: 'Gris', hex: '#475569' }
 ];
 
-// Parser de Fechas Seguro (Evita Colapsos de Renderizado)
-const parseSafeDate = (val) => {
-    if (!val) return null;
-    try {
-        if (typeof val === 'object' && val.seconds) return new Date(val.seconds * 1000);
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? null : d;
-    } catch (e) {
-        return null;
-    }
-};
-
 const App = () => {
   const appId = 'war-control-pro';
   const [lang, setLang] = useState('es');
+  
   const t = useCallback((key) => dict[lang][key] || key, [lang]);
+
   const [activeHelp, setActiveHelp] = useState(null);
   
   const [actionLog, setActionLog] = useState([]);
@@ -289,6 +279,7 @@ const App = () => {
   
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const wakeLockRef = useRef(null);
+  const audioHackRef = useRef(null);
 
   const tasksRef = useRef([]);
   const targetEndTimeRef = useRef(null);
@@ -327,8 +318,26 @@ const App = () => {
       addLog(`Idioma cambiado a ${nextLang.toUpperCase()}`, 'info');
   };
 
+  // ==========================================
+  // WAKELOCK Y AUDIO SILENCIOSO INTEGRADOS (En Memoria RAM)
+  // ==========================================
   const toggleWakeLock = async () => {
-    const audioEl = document.getElementById('silent-audio-hack');
+    // Fabricamos el audio dinámicamente para evadir escudos de navegadores (Fingerprinting blockers)
+    if (!audioHackRef.current) {
+        const silenceBase64 = "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vwAAABMYXZjNTkuMzcuMTAwAAAAAAAAAAAAAAAAJAAAAAAAAAAAScCAgP/zhAAAAAAAAAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+        const byteCharacters = atob(silenceBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {type: 'audio/mpeg'});
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.loop = true;
+        audio.playsInline = true;
+        audioHackRef.current = audio;
+    }
     
     if (wakeLockActive) {
       if (wakeLockRef.current) {
@@ -336,31 +345,30 @@ const App = () => {
         wakeLockRef.current = null;
       }
       setWakeLockActive(false);
-      if (audioEl) audioEl.pause();
-      addLog("Modo Vigía y Audio de Fondo DESACTIVADOS.", "warning");
+      audioHackRef.current.pause();
+      addLog("Modo Vigía DESACTIVADO.", "warning");
       return;
     }
 
-    if (audioEl) {
-        audioEl.play().catch(e => addLog("El navegador bloqueó el audio silencioso.", "error"));
-    }
+    audioHackRef.current.play().catch(e => addLog("Navegador bloqueó audio de fondo.", "error"));
 
     if (!('wakeLock' in navigator)) {
       setWakeLockActive(true); 
-      addLog("Modo Vigía: Solo Audio de fondo activado.", "warning");
+      addLog("Modo Vigía: Operando solo en Fondo (API WakeLock no soportada).", "warning");
       return;
     }
 
     try {
       wakeLockRef.current = await navigator.wakeLock.request('screen');
       setWakeLockActive(true);
-      addLog("Modo Vigía Completo ACTIVADO.", "success");
+      addLog("Modo Vigía ACTIVADO (Pantalla y Fondo activos).", "success");
+      
       wakeLockRef.current.addEventListener('release', () => { 
-          addLog("Pantalla sin bloqueo, confiando en audio de fondo.", "warning");
+          addLog("Pantalla liberada, operando en modo Fondo.", "warning");
       });
     } catch (err) {
       setWakeLockActive(true);
-      addLog(`WakeLock falló, operando en modo Audio.`, "warning");
+      addLog(`Modo Vigía operando en Modo Fondo.`, "warning");
     }
   };
 
@@ -485,14 +493,14 @@ const App = () => {
           addLog("Perfil de audio configurado a: Silenciado", "info");
           return;
       }
-      addLog(`Reproduciendo muestra: ${profile}`, "info");
+      addLog(`Reproduciendo muestra de audio: ${profile}`, "info");
       previewEngineRef.current = synthesizeAudio(profile, true);
   }, [stopInfiniteAlarm, synthesizeAudio, addLog]);
 
   const triggerInfiniteAlarm = useCallback((type) => {
       stopInfiniteAlarm();
       const profile = type === 'war' ? warSoundRef.current : taskSoundRef.current;
-      addLog(`Disparando alarma táctica [Tipo: ${type}]. Audio: ${profile}`, "warning");
+      addLog(`Disparando alarma táctica infinita [Tipo: ${type}]. Audio: ${profile}`, "warning");
       
       if (vibrateOnRef.current && navigator.vibrate) {
           triggerHaptic([500, 200, 500, 200]);
@@ -512,12 +520,12 @@ const App = () => {
       if (sysNotifOn) {
           setSysNotifOn(false);
           if (syncRef.current) syncRef.current({ sysNotifOn: false });
-          addLog("Notificaciones en barra DESACTIVADAS.", "warning");
+          addLog("Notificaciones en barra DESACTIVADAS manualmente.", "warning");
           return;
       }
 
       if (typeof Notification === 'undefined') {
-          addLog("API Notification no soportada.", "error");
+          addLog("API Notification no soportada en este entorno.", "error");
           return;
       }
 
@@ -526,7 +534,7 @@ const App = () => {
           if (status === 'granted') {
               setSysNotifOn(true);
               if (syncRef.current) syncRef.current({ sysNotifOn: true });
-              addLog("Permiso CONCEDIDO. Alertas activadas.", "success");
+              addLog("Permiso de notificación CONCEDIDO. Alertas activadas.", "success");
               
               if (messagingInstance && user) {
                   try {
@@ -536,14 +544,14 @@ const App = () => {
                           if (syncRef.current) syncRef.current({ fcmToken: currentToken });
                       }
                   } catch (e) {
-                      addLog(`Aviso: Fallo Token FCM. Locales seguirán operando.`, "warning");
+                      addLog(`Aviso: FCM no generó token. Notificaciones locales seguirán funcionando.`, "warning");
                   }
               }
           } else {
-              addLog("Permiso de notificación DENEGADO.", "error");
+              addLog("Permiso de notificación DENEGADO por el usuario o navegador.", "error");
           }
       } catch (err) {
-          addLog(`Fallo permisos: ${err.message}`, "error");
+          addLog(`Fallo al solicitar permisos: ${err.message}`, "error");
       }
   };
 
@@ -558,6 +566,8 @@ const App = () => {
               if (regs.length > 0) {
                   await regs[0].showNotification(String(title), {
                       body: String(body),
+                      icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+                      badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
                       vibrate: [500, 200, 500, 200, 500],
                       requireInteraction: true 
                   });
@@ -566,7 +576,7 @@ const App = () => {
           }
           new Notification(String(title), { body: String(body), requireInteraction: true });
       } catch (e) {
-          addLog(`Fallo al inyectar alerta: ${e.message}`, "error");
+          addLog(`Fallo al inyectar alerta en la barra: ${e.message}`, "error");
       }
   }, [sysNotifOn, addLog]);
 
@@ -576,7 +586,7 @@ const App = () => {
         if (rawData) {
             try {
                 const data = JSON.parse(rawData);
-                if (data.targetEndTime) setTargetEndTime(parseSafeDate(data.targetEndTime));
+                if (data.targetEndTime) setTargetEndTime(new Date(data.targetEndTime));
                 if (data.warAlarms) setWarAlarms(data.warAlarms);
                 if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
                 if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
@@ -599,7 +609,7 @@ const App = () => {
             } catch(e) {}
         }
         setIsLoaded(true);
-        addLog("SISTEMA INICIADO OFFLINE", "warning");
+        addLog("SISTEMA INICIADO EN MODO LOCAL (OFFLINE)", "warning");
         return;
     }
 
@@ -611,7 +621,7 @@ const App = () => {
                   setUser(currentUser);
               }); 
           } catch(e) {
-              addLog(`Fallo Auth: ${e.message}`, "error");
+              addLog(`Fallo de Autenticación de Servidor: ${e.message}`, "error");
           }
       }
     };
@@ -624,7 +634,7 @@ const App = () => {
     const unsub = onSnapshot(docRef, (snap) => {
       if (snap.exists() && !isDraggingRef.current) { 
         const data = snap.data();
-        if (data.targetEndTime) setTargetEndTime(parseSafeDate(data.targetEndTime));
+        if (data.targetEndTime) setTargetEndTime(new Date(data.targetEndTime));
         if (data.warAlarms) setWarAlarms(data.warAlarms);
         if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
         if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
@@ -692,6 +702,7 @@ const App = () => {
           let hasNewFinishedTasks = false;
           let finishedLabels = [];
 
+          // VERIFICACIÓN DE CRONÓMETROS (TAREAS)
           const nextTasks = tasksRef.current.map(t => {
             if (t.isRunning && t.serverEndTime) {
               const exactRemaining = Math.max(0, Math.floor((t.serverEndTime - now) / 1000));
@@ -712,14 +723,16 @@ const App = () => {
             return t;
           });
 
+          // VERIFICACIÓN DE GUERRA GLOBAL Y AVISOS TEMPRANOS
           let newlyTriggeredAlarms = [];
           let nextAlarms = [...warAlarmsRef.current];
           let warEndedNow = false;
           
-          if (targetEndTimeRef.current && !isNaN(targetEndTimeRef.current.getTime())) {
+          if (targetEndTimeRef.current) {
               const msRem = targetEndTimeRef.current.getTime() - now;
               const visualSecsRem = Math.floor(msRem / 1000);
 
+              // 1. Detección de Fin de Guerra Exacto (0s)
               if (visualSecsRem === 0 && !globalWarAlertedRef.current) {
                   globalWarAlertedRef.current = true;
                   warEndedNow = true;
@@ -728,11 +741,13 @@ const App = () => {
                   globalWarAlertedRef.current = false;
               }
 
+              // 2. Detección de Avisos Tempranos
               if (msRem < 86400000 && msRem > -86400000) { 
                   warAlarmsRef.current.forEach(a => {
                       if (a.on && !a.trig) {
                           let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
                           let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
+                          
                           const limitSecs = Math.floor(limitMs / 1000);
                           
                           if (limitSecs > 0 && visualSecsRem <= limitSecs && visualSecsRem >= 0) {
@@ -743,6 +758,7 @@ const App = () => {
               }
           }
 
+          // CONSTRUCCIÓN DE ALERTAS VISCERALES
           if (finishedLabels.length > 0) {
               setAlertQueue(prev => [...prev, { 
                   title: t('taskFinished'), 
@@ -814,7 +830,7 @@ const App = () => {
 
   const toggleAlarm = (id) => {
       const now = Date.now();
-      const msRem = (targetEndTimeRef.current && !isNaN(targetEndTimeRef.current.getTime())) ? targetEndTimeRef.current.getTime() - now : 0;
+      const msRem = targetEndTimeRef.current ? targetEndTimeRef.current.getTime() - now : 0;
       
       const next = warAlarms.map(a => {
           if (a.id === id) {
@@ -823,7 +839,7 @@ const App = () => {
               
               let newTrig = a.trig;
               if (isTurningOn) {
-                  if (targetEndTimeRef.current && !isNaN(targetEndTimeRef.current.getTime()) && msRem <= limitMs) {
+                  if (targetEndTimeRef.current && msRem <= limitMs) {
                       newTrig = true; 
                   } else {
                       newTrig = false; 
@@ -1113,19 +1129,16 @@ const App = () => {
   };
 
   const warRem = (() => {
-    if (!targetEndTime || isNaN(targetEndTime.getTime())) return { h: 0, m: 0, s: 0 };
+    if (!targetEndTime) return { h: 0, m: 0, s: 0 };
     const d = targetEndTime.getTime() - currentTime.getTime();
     if (d <= 0) return { h: 0, m: 0, s: 0 };
     return { h: Math.floor(d/3600000), m: Math.floor((d%3600000)/60000), s: Math.floor((d%60000)/1000) };
   })();
 
   let globalTimePart = "--:--", globalAmpmPart = "--";
-  if (targetEndTime && !isNaN(targetEndTime.getTime())) {
-      try {
-          const timeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
-          globalTimePart = timeParts[0] || "--:--"; 
-          globalAmpmPart = timeParts[1] || '';
-      } catch (e) {}
+  if (targetEndTime) {
+      const timeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
+      globalTimePart = timeParts[0]; globalAmpmPart = timeParts[1] || '';
   }
 
   const formatRealTime = (date) => {
@@ -1147,8 +1160,8 @@ const App = () => {
       <div 
           key={t.id} data-dnd-target="true" data-dnd-id={t.id} data-dnd-type="task" data-dnd-box={targetBoxId}
           onPointerDown={(e) => handleItemPointerDown(e, t.id, 'task')} onContextMenu={(e) => e.preventDefault()} 
-          className={`relative border rounded-xl p-2 px-3 flex flex-col mb-1.5 select-none ${taskBaseStyle}
-              ${isThisDragged ? 'opacity-30 border-dashed border-amber-500' : 'opacity-100'}
+          className={`relative border rounded-xl p-2 px-3 flex flex-col mb-1.5 transition-all select-none ${taskBaseStyle}
+              ${isThisDragged ? 'opacity-30 border-dashed border-amber-500 scale-[0.98]' : 'opacity-100 cursor-grab'}
               ${isInside ? 'mx-1' : ''}`}
           style={isInside && !isThisDragged && !t.isNewFinish ? { borderLeft: `3px solid ${boxes.find(b => b.id === t.boxId)?.color || '#333'}` } : {}}
       >
@@ -1171,7 +1184,7 @@ const App = () => {
                       <div className="relative"><input type="text" inputMode="numeric" placeholder="0" value={editBuf.m} onChange={e => setEditBuf({...editBuf, m: e.target.value.replace(/\D/g,'')})} className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 text-center text-lg font-mono outline-none focus:border-blue-500"/><span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-500 font-bold uppercase">M</span></div><span className="text-zinc-600 font-bold">:</span>
                       <div className="relative"><input type="text" inputMode="numeric" placeholder="0" value={editBuf.s} onChange={e => setEditBuf({...editBuf, s: e.target.value.replace(/\D/g,'')})} className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 text-center text-lg font-mono outline-none focus:border-amber-500"/><span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-amber-500 font-bold uppercase">S</span></div>
                   </div>
-              ) : ( <div className={`text-2xl font-mono font-bold leading-none tracking-tighter ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.remainingSeconds === 0 ? 'text-amber-500' : 'text-white')} ${t.isNewFinish ? 'animate-pulse' : ''}`}>{formatTime(t.remainingSeconds)}</div> )}
+              ) : ( <div className={`text-2xl font-mono font-bold leading-none tracking-tighter duration-300 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.remainingSeconds === 0 ? 'text-amber-500' : 'text-white')} ${t.isNewFinish ? 'animate-pulse' : ''}`}>{formatTime(t.remainingSeconds)}</div> )}
           </div>
 
           <div className="flex items-center gap-1 border-l border-zinc-800 pl-2 shrink-0 pointer-events-auto h-full">
@@ -1200,7 +1213,7 @@ const App = () => {
   const currentAlertConf = activeAlert ? (alertConfig[activeAlert.type] || alertConfig.task) : alertConfig.task;
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 p-4 pb-32 overflow-x-hidden font-sans" style={{ WebkitTapHighlightColor: 'transparent' }}>
+    <div className="min-h-[100dvh] bg-black text-zinc-100 p-4 pb-32 overflow-x-hidden font-sans" style={{ WebkitTapHighlightColor: 'transparent' }}>
       <style>{`
         @keyframes tremble { 0% { transform: rotate(1.5deg) scale(1.05); } 50% { transform: rotate(-1.5deg) scale(1.05); } 100% { transform: rotate(1.5deg) scale(1.05); } }
         .is-ghost { animation: tremble 0.12s infinite !important; }
@@ -1251,10 +1264,6 @@ const App = () => {
           </div>
         </div>
       )}
-
-      <audio id="silent-audio-hack" loop playsInline style={{display: 'none'}}>
-          <source src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vwAAABMYXZjNTkuMzcuMTAwAAAAAAAAAAAAAAAAJAAAAAAAAAAAScCAgP/zhAAAAAAAAAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV" type="audio/mpeg" />
-      </audio>
 
       {dragState.isDragging && (
           <div className="fixed z-[9999] pointer-events-none is-ghost shadow-[0_20px_50px_rgba(245,158,11,0.5)] border-2 border-amber-500 rounded-xl bg-zinc-900/95 px-4 py-3 backdrop-blur" style={{ left: dragState.pos.x - 70, top: dragState.pos.y - 30 }}>
@@ -1486,7 +1495,7 @@ const App = () => {
 
                                 {editingBoxId === box.id ? (
                                     <div className="flex-1 flex flex-col p-3 bg-zinc-900/90 w-full animate-in fade-in">
-                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full ${newBoxColor === c.hex ? 'border-2 border-white scale-110 shadow-lg' : 'opacity-40'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white shadow-md"><Check size={14}/></button></div></div>
+                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full border-2 ${newBoxColor === c.hex ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white shadow-md"><Check size={14}/></button></div></div>
                                         <div className="flex items-center justify-between px-1 py-2 border-t border-zinc-800/80"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest flex items-center gap-1.5"><Plus size={10}/> {t('addCrono')}</span><div className="flex gap-1.5"><button onClick={() => handleEditBoxDraftCount(false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 shadow-sm"><Minus size={12}/></button><button onClick={() => handleEditBoxDraftCount(true)} className="p-1.5 bg-blue-600/20 text-blue-400 rounded-lg shadow-sm"><Plus size={12}/></button></div></div>
                                         <div className="space-y-1.5 mt-1">
                                             {editBoxDrafts.map((draft, i) => (
