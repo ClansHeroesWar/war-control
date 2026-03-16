@@ -3,7 +3,7 @@ import {
   ShieldAlert, RotateCcw, AlertTriangle, X, Minus, Plus,
   Pause, Play, Trash2, Edit2, Check, GripVertical, Smartphone,
   Layout, ArrowDownToLine, Volume2, Volume1, VolumeX,
-  BellRing, Music, ChevronDown, ChevronUp, Settings, Clock, Eye, EyeOff, Globe, Info, TerminalSquare, Activity
+  Music, ChevronDown, ChevronUp, Settings, Clock, Eye, EyeOff, Globe, Info, TerminalSquare, Activity
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -12,7 +12,7 @@ import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getMessaging, getToken } from 'firebase/messaging';
 
 // ==========================================
-// ICONOS SVG FORJADOS A MEDIDA (Vectores Puros)
+// ICONOS SVG FORJADOS A MEDIDA
 // ==========================================
 const HornIcon = ({ size = 24, className = "" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -93,7 +93,7 @@ const dict = {
     typeRelaxing: "Relaxing",
     typeSilent: "Silent",
     help_header_title: "Global Control Panel",
-    help_header_desc: "• Globe: Changes system language.\n• Terminal: Opens Debug Logs.\n• Eye: Prevents screen from sleeping.\n• Volume: System audio toggle.\n• Music Note: Acoustic settings.\n• Smartphone: Toggles system push notifications.",
+    help_header_desc: "• Globe: Changes system language.\n• Terminal: Opens Debug Logs.\n• Eye: Keeps the app running in the background.\n• Volume: System audio toggle.\n• Music Note: Acoustic settings.\n• Smartphone: Toggles system push notifications.",
     help_time_title: "Strategic Time Module",
     help_time_desc: "• End Time: Displays global target time.\n• Early Warnings: Select preset alerts (15M, 10M, 5M) before the global End Time.\n• H/M Inputs: Manually set global target time.",
     help_creation_title: "Deployment Module",
@@ -143,7 +143,7 @@ const dict = {
     typeRelaxing: "Relajante",
     typeSilent: "Silencio",
     help_header_title: "Panel de Control Global",
-    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Evita que la pantalla se apague.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones push en barra.",
+    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Mantiene la app funcionando para que no se cierre en segundo plano.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones push en barra.",
     help_time_title: "Módulo de Tiempo Estratégico",
     help_time_desc: "• Hora Fin: Establece el límite global.\n• Avisos Tempranos: Calcula alertas (15M, 10M, 5M) antes de la Hora Fin.\n• Entradas H/M: Define tu objetivo manual.",
     help_creation_title: "Módulo de Despliegue",
@@ -201,12 +201,22 @@ const COLORS = [
   { name: 'Gris', hex: '#475569' }
 ];
 
+const parseSafeDate = (val) => {
+    if (!val) return null;
+    try {
+        if (typeof val === 'object' && val.seconds) return new Date(val.seconds * 1000);
+        if (typeof val === 'number') return new Date(val); 
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+    } catch (e) {
+        return null;
+    }
+};
+
 const App = () => {
   const appId = 'war-control-pro';
   const [lang, setLang] = useState('es');
-  
   const t = useCallback((key) => dict[lang][key] || key, [lang]);
-
   const [activeHelp, setActiveHelp] = useState(null);
   
   // ==========================================
@@ -230,6 +240,12 @@ const App = () => {
     { id: 'crystal', name: t('soundCrystal'), type: t('typeRelaxing') },
     { id: 'zen', name: t('soundZen'), type: t('typeRelaxing') },
     { id: 'muted', name: t('soundMuted'), type: t('typeSilent') }
+  ];
+
+  const ANTI_SLEEP_PROFILES = [
+    { id: 'engine', name: "Motor Submarino (50Hz)", type: "Zumbido persistente" },
+    { id: 'static', name: "Estática de Radio", type: "Ruido blanco suave" },
+    { id: 'ultrasonic', name: "Ultrasonido (18kHz)", type: "Inaudible / Forzado" }
   ];
 
   const [user, setUser] = useState(null);
@@ -279,9 +295,11 @@ const App = () => {
   
   const [warSound, setWarSound] = useState('siren');
   const [taskSound, setTaskSound] = useState('radar');
+  const [antiSleepSound, setAntiSleepSound] = useState('engine');
   
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const wakeLockRef = useRef(null);
+  const antiSleepEngineRef = useRef(null); // Referencia al oscilador anti-suspensión
 
   const tasksRef = useRef([]);
   const targetEndTimeRef = useRef(null);
@@ -320,31 +338,89 @@ const App = () => {
       addLog(`Idioma cambiado a ${nextLang.toUpperCase()}`, 'info');
   };
 
+  // ==========================================
+  // MOTOR ANTI-SUSPENSIÓN (AUDIO CONTINUO NATIVO)
+  // ==========================================
+  const startAntiSleepAudio = useCallback((type) => {
+      initGlobalAudio();
+      if (!globalAudioCtx) return null;
+      
+      const ctx = globalAudioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      if (type === 'engine') {
+          osc.type = 'sine';
+          osc.frequency.value = 50; 
+          gain.gain.value = 0.05; 
+      } else if (type === 'static') {
+          // Aproximación de ruido blanco con oscilador modulado rápidamente
+          osc.type = 'square';
+          osc.frequency.value = 100;
+          gain.gain.value = 0.01;
+      } else if (type === 'ultrasonic') {
+          osc.type = 'sine';
+          osc.frequency.value = 18000; 
+          gain.gain.value = 0.1; // Inaudible, forzando trabajo CPU
+      }
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+
+      return {
+          stop: () => {
+              try { osc.stop(); osc.disconnect(); gain.disconnect(); } catch(e){}
+          }
+      };
+  }, []);
+
   const toggleWakeLock = async () => {
-    if (!('wakeLock' in navigator)) {
-      addLog("API WakeLock no soportada en este navegador.", "error");
+    if (wakeLockActive) {
+      if (wakeLockRef.current) {
+        try { await wakeLockRef.current.release(); } catch(e){}
+        wakeLockRef.current = null;
+      }
+      if (antiSleepEngineRef.current) {
+          antiSleepEngineRef.current.stop();
+          antiSleepEngineRef.current = null;
+      }
+      setWakeLockActive(false);
+      addLog("Modo Vigía y Motor Anti-Suspensión DESACTIVADOS.", "warning");
       return;
     }
+
+    // Encender Audio Continuo Real
+    antiSleepEngineRef.current = startAntiSleepAudio(antiSleepSound);
+
+    if (!('wakeLock' in navigator)) {
+      setWakeLockActive(true); 
+      addLog("Modo Vigía: API Nativa no soportada. Operando exclusivamente con Motor Anti-Suspensión de Audio.", "warning");
+      return;
+    }
+
     try {
-      if (wakeLockActive && wakeLockRef.current) {
-        await wakeLockRef.current.release();
-        wakeLockRef.current = null;
-        setWakeLockActive(false);
-        addLog("Modo Vigía DESACTIVADO.", "warning");
-      } else {
-        wakeLockRef.current = await navigator.wakeLock.request('screen');
-        setWakeLockActive(true);
-        addLog("Modo Vigía ACTIVADO (Pantalla bloqueada).", "success");
-        wakeLockRef.current.addEventListener('release', () => { 
-            setWakeLockActive(false); 
-            addLog("Modo Vigía liberado por el sistema operativo.", "warning");
-        });
-      }
+      wakeLockRef.current = await navigator.wakeLock.request('screen');
+      setWakeLockActive(true);
+      addLog("Modo Vigía Completo ACTIVADO (Audio + Pantalla).", "success");
+      wakeLockRef.current.addEventListener('release', () => { 
+          addLog("La pantalla perdió el bloqueo nativo. Confiando persistencia en el Motor Anti-Suspensión Acústico.", "warning");
+      });
     } catch (err) {
-      setWakeLockActive(false);
-      addLog(`Error WakeLock: ${err.message}`, "error");
+      setWakeLockActive(true);
+      addLog(`WakeLock falló, operando en modo Audio continuo.`, "warning");
     }
   };
+
+  // Escucha cambios en el sonido Anti-Sleep y lo reinicia si está activo
+  useEffect(() => {
+      if (wakeLockActive) {
+          if (antiSleepEngineRef.current) antiSleepEngineRef.current.stop();
+          antiSleepEngineRef.current = startAntiSleepAudio(antiSleepSound);
+      }
+  }, [antiSleepSound, wakeLockActive, startAntiSleepAudio]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -464,7 +540,7 @@ const App = () => {
   const playPreview = useCallback((profile) => {
       stopInfiniteAlarm();
       if (profile === 'muted') {
-          addLog("Perfil de audio configurado a: Silenciado", "info");
+          addLog("Perfil configurado a: Silenciado", "info");
           return;
       }
       addLog(`Reproduciendo muestra de audio: ${profile}`, "info");
@@ -474,7 +550,7 @@ const App = () => {
   const triggerInfiniteAlarm = useCallback((type) => {
       stopInfiniteAlarm();
       const profile = type === 'war' ? warSoundRef.current : taskSoundRef.current;
-      addLog(`Disparando alarma táctica infinita [Tipo: ${type}]. Audio: ${profile}`, "warning");
+      addLog(`Disparando alarma táctica [Tipo: ${type}]. Audio: ${profile}`, "warning");
       
       if (vibrateOnRef.current && navigator.vibrate) {
           triggerHaptic([500, 200, 500, 200]);
@@ -499,7 +575,7 @@ const App = () => {
       }
 
       if (typeof Notification === 'undefined') {
-          addLog("Tu sistema/navegador no soporta notificaciones de sistema.", "error");
+          addLog("API Notification no soportada en este entorno.", "error");
           return;
       }
 
@@ -541,6 +617,8 @@ const App = () => {
               if (regs.length > 0) {
                   await regs[0].showNotification(String(title), {
                       body: String(body),
+                      icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+                      badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
                       vibrate: [500, 200, 500, 200, 500],
                       requireInteraction: true 
                   });
@@ -559,7 +637,7 @@ const App = () => {
         if (rawData) {
             try {
                 const data = JSON.parse(rawData);
-                if (data.targetEndTime) setTargetEndTime(new Date(data.targetEndTime));
+                if (data.targetEndTime) setTargetEndTime(parseSafeDate(data.targetEndTime));
                 if (data.warAlarms) setWarAlarms(data.warAlarms);
                 if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
                 if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
@@ -570,6 +648,7 @@ const App = () => {
                 if (data.rootOrder) setRootOrder(data.rootOrder);
                 if (data.language) setLang(data.language);
                 if (data.fcmToken) setPushToken(data.fcmToken);
+                if (data.antiSleepSound) setAntiSleepSound(data.antiSleepSound);
                 if (data.tasks) {
                   const now = Date.now();
                   setTasks(data.tasks.map(t => ({
@@ -579,7 +658,9 @@ const App = () => {
                     alerted: t.alerted || false
                   })));
                 }
-            } catch(e) {}
+            } catch(e) {
+                addLog("Error recuperando caché local", "error");
+            }
         }
         setIsLoaded(true);
         addLog("SISTEMA INICIADO EN MODO LOCAL (OFFLINE)", "warning");
@@ -592,10 +673,9 @@ const App = () => {
               await signInAnonymously(authInstance); 
               onAuthStateChanged(authInstance, (currentUser) => {
                   setUser(currentUser);
-                  addLog(`Usuario encriptado conectado: ${currentUser?.uid?.substring(0,6)}...`, "success");
               }); 
           } catch(e) {
-              addLog(`Fallo de Autenticación de Servidor: ${e.message}`, "error");
+              addLog(`Fallo de Autenticación Firebase: ${e.message}`, "error");
           }
       }
     };
@@ -607,31 +687,36 @@ const App = () => {
     const docRef = doc(dbInstance, 'artifacts', appId, 'users', user.uid, 'settings', 'global_data_v45');
     const unsub = onSnapshot(docRef, (snap) => {
       if (snap.exists() && !isDraggingRef.current) { 
-        const data = snap.data();
-        if (data.targetEndTime) setTargetEndTime(new Date(data.targetEndTime));
-        if (data.warAlarms) setWarAlarms(data.warAlarms);
-        if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
-        if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
-        if (data.warSound) setWarSound(data.warSound);
-        if (data.taskSound) setTaskSound(data.taskSound);
-        if (data.sysNotifOn !== undefined) setSysNotifOn(data.sysNotifOn);
-        if (data.boxes) setBoxes(data.boxes);
-        if (data.rootOrder) setRootOrder(data.rootOrder);
-        if (data.language) setLang(data.language);
-        if (data.tasks) {
-          const now = Date.now();
-          setTasks(data.tasks.map(t => ({
-            ...t, 
-            remainingSeconds: t.isRunning && t.serverEndTime ? Math.max(0, Math.floor((t.serverEndTime - now) / 1000)) : t.remainingSeconds,
-            isNewFinish: t.isNewFinish || false,
-            alerted: t.alerted || false
-          })));
+        try {
+            const data = snap.data();
+            if (data.targetEndTime) setTargetEndTime(parseSafeDate(data.targetEndTime));
+            if (data.warAlarms) setWarAlarms(data.warAlarms);
+            if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
+            if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
+            if (data.warSound) setWarSound(data.warSound);
+            if (data.taskSound) setTaskSound(data.taskSound);
+            if (data.sysNotifOn !== undefined) setSysNotifOn(data.sysNotifOn);
+            if (data.boxes) setBoxes(data.boxes);
+            if (data.rootOrder) setRootOrder(data.rootOrder);
+            if (data.language) setLang(data.language);
+            if (data.antiSleepSound) setAntiSleepSound(data.antiSleepSound);
+            if (data.tasks) {
+              const now = Date.now();
+              setTasks(data.tasks.map(t => ({
+                ...t, 
+                remainingSeconds: t.isRunning && t.serverEndTime ? Math.max(0, Math.floor((t.serverEndTime - now) / 1000)) : t.remainingSeconds,
+                isNewFinish: t.isNewFinish || false,
+                alerted: t.alerted || false
+              })));
+            }
+        } catch (e) {
+            addLog("Error crítico de decodificación Firebase", "error");
         }
       }
       setIsLoaded(true);
     });
     return () => unsub();
-  }, [user]);
+  }, [user, addLog]);
 
   const sync = async (updates) => {
     if (isOfflineMode) {
@@ -663,7 +748,7 @@ const App = () => {
   }, [activeAlert, alertQueue, stopInfiniteAlarm]);
 
   // ==========================================
-  // TICKER UNIFICADO (ALTA PRECISIÓN: 250ms)
+  // TICKER UNIFICADO BLINDADO
   // ==========================================
   useEffect(() => {
       const ticker = setInterval(() => {
@@ -703,35 +788,39 @@ const App = () => {
           let warEndedNow = false;
           
           if (targetEndTimeRef.current) {
-              const msRem = targetEndTimeRef.current.getTime() - now;
-              const visualSecsRem = Math.floor(msRem / 1000);
+            try {
+              const targetTimeMs = targetEndTimeRef.current.getTime();
+              if (!isNaN(targetTimeMs)) {
+                  const msRem = targetTimeMs - now;
+                  const visualSecsRem = Math.floor(msRem / 1000);
 
-              // 1. Detección de Fin de Guerra Exacto (0s)
-              if (visualSecsRem === 0 && !globalWarAlertedRef.current) {
-                  globalWarAlertedRef.current = true;
-                  warEndedNow = true;
-                  addLog(`LA GUERRA HA FINALIZADO.`, 'warning');
-              } else if (visualSecsRem > 0) {
-                  globalWarAlertedRef.current = false; // Se rearma si el tiempo global cambia al futuro
-              }
+                  if (visualSecsRem === 0 && !globalWarAlertedRef.current) {
+                      globalWarAlertedRef.current = true;
+                      warEndedNow = true;
+                      addLog(`LA GUERRA HA FINALIZADO.`, 'warning');
+                  } else if (visualSecsRem > 0) {
+                      globalWarAlertedRef.current = false;
+                  }
 
-              // 2. Detección de Avisos Tempranos
-              if (msRem < 86400000 && msRem > -86400000) { 
-                  warAlarmsRef.current.forEach(a => {
-                      if (a.on && !a.trig) {
-                          let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
-                          let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
-                          const limitSecs = Math.floor(limitMs / 1000);
-                          
-                          if (limitSecs > 0 && visualSecsRem <= limitSecs && visualSecsRem >= 0) {
-                              newlyTriggeredAlarms.push(a);
+                  if (msRem < 86400000 && msRem > -86400000) { 
+                      warAlarmsRef.current.forEach(a => {
+                          if (a.on && !a.trig) {
+                              let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
+                              let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
+                              const limitSecs = Math.floor(limitMs / 1000);
+                              
+                              if (limitSecs > 0 && visualSecsRem <= limitSecs && visualSecsRem >= 0) {
+                                  newlyTriggeredAlarms.push(a);
+                              }
                           }
-                      }
-                  });
+                      });
+                  }
               }
+            } catch(e) {
+                addLog("Error en matemática de tiempo principal", "error");
+            }
           }
 
-          // CONSTRUCCIÓN DE ALERTAS VISCERALES
           if (finishedLabels.length > 0) {
               setAlertQueue(prev => [...prev, { 
                   title: t('taskFinished'), 
@@ -756,7 +845,9 @@ const App = () => {
                       return `La guerra finaliza en ${timeStr}`;
                   }).join('\n• ');
                   
-                  notifBody += `${alarmLabels}`;
+                  if (notifBody) { notifBody += `${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
+                  else { alertTitle = t('earlyWarnings'); notifBody = `• ${alarmLabels}`; }
+
                   nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
                   setWarAlarms(nextAlarms); 
                   if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
@@ -801,7 +892,10 @@ const App = () => {
 
   const toggleAlarm = (id) => {
       const now = Date.now();
-      const msRem = targetEndTimeRef.current ? targetEndTimeRef.current.getTime() - now : 0;
+      let msRem = 0;
+      if (targetEndTimeRef.current && !isNaN(targetEndTimeRef.current.getTime())) {
+          msRem = targetEndTimeRef.current.getTime() - now;
+      }
       
       const next = warAlarms.map(a => {
           if (a.id === id) {
@@ -810,7 +904,7 @@ const App = () => {
               
               let newTrig = a.trig;
               if (isTurningOn) {
-                  if (targetEndTimeRef.current && msRem <= limitMs) {
+                  if (targetEndTimeRef.current && !isNaN(targetEndTimeRef.current.getTime()) && msRem <= limitMs) {
                       newTrig = true; 
                   } else {
                       newTrig = false; 
@@ -1100,16 +1194,19 @@ const App = () => {
   };
 
   const warRem = (() => {
-    if (!targetEndTime) return { h: 0, m: 0, s: 0 };
+    if (!targetEndTime || isNaN(targetEndTime.getTime())) return { h: 0, m: 0, s: 0 };
     const d = targetEndTime.getTime() - currentTime.getTime();
     if (d <= 0) return { h: 0, m: 0, s: 0 };
     return { h: Math.floor(d/3600000), m: Math.floor((d%3600000)/60000), s: Math.floor((d%60000)/1000) };
   })();
 
   let globalTimePart = "--:--", globalAmpmPart = "--";
-  if (targetEndTime) {
-      const timeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
-      globalTimePart = timeParts[0]; globalAmpmPart = timeParts[1] || '';
+  if (targetEndTime && !isNaN(targetEndTime.getTime())) {
+      try {
+          const timeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
+          globalTimePart = timeParts[0] || "--:--"; 
+          globalAmpmPart = timeParts[1] || '';
+      } catch (e) {}
   }
 
   const formatRealTime = (date) => {
@@ -1125,15 +1222,14 @@ const App = () => {
   const renderTask = (t, isInside, targetBoxId = null) => {
     const isTarget = dropIndicator?.id === t.id && dropIndicator?.type === 'task';
     const isThisDragged = dragState.item?.id === t.id;
-    // Tareas usan Naranja para el estado visualizado
     const taskBaseStyle = t.isNewFinish ? 'bg-amber-950/40 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'bg-zinc-900 border-zinc-800';
 
     return (
       <div 
           key={t.id} data-dnd-target="true" data-dnd-id={t.id} data-dnd-type="task" data-dnd-box={targetBoxId}
           onPointerDown={(e) => handleItemPointerDown(e, t.id, 'task')} onContextMenu={(e) => e.preventDefault()} 
-          className={`relative border rounded-xl p-2 px-3 flex flex-col mb-1.5 transition-all select-none ${taskBaseStyle}
-              ${isThisDragged ? 'opacity-30 border-dashed border-amber-500 scale-[0.98]' : 'opacity-100 cursor-grab'}
+          className={`relative border rounded-xl p-2 px-3 flex flex-col mb-1.5 select-none ${taskBaseStyle}
+              ${isThisDragged ? 'opacity-30 border-dashed border-amber-500' : 'opacity-100'}
               ${isInside ? 'mx-1' : ''}`}
           style={isInside && !isThisDragged && !t.isNewFinish ? { borderLeft: `3px solid ${boxes.find(b => b.id === t.boxId)?.color || '#333'}` } : {}}
       >
@@ -1161,14 +1257,14 @@ const App = () => {
 
           <div className="flex items-center gap-1 border-l border-zinc-800 pl-2 shrink-0 pointer-events-auto h-full">
             {editingId === t.id ? (
-              <div className="flex gap-1"><button onClick={() => setEditingId(null)} className="p-2 bg-zinc-700/80 rounded-lg text-white transition-opacity active:opacity-50"><X size={16}/></button><button onClick={() => saveEdit(t.id)} className="p-2 bg-blue-600 rounded-lg text-white transition-opacity active:opacity-50 shadow-md"><Check size={16}/></button></div>
+              <div className="flex gap-1"><button onClick={() => setEditingId(null)} className="p-2 bg-zinc-700/80 rounded-lg text-white"><X size={16}/></button><button onClick={() => saveEdit(t.id)} className="p-2 bg-blue-600 rounded-lg text-white shadow-md shadow-blue-900/50"><Check size={16}/></button></div>
             ) : (
               <>
-                {t.isNewFinish && ( <button onClick={(e) => { e.stopPropagation(); dismissNewFinish(t.id); }} className="p-1 px-2.5 bg-amber-600 text-white rounded-lg font-black text-[9px] uppercase flex items-center gap-1 animate-pulse transition-opacity active:opacity-50 mr-1 shadow-[0_0_10px_rgba(245,158,11,0.5)]"><RolledScrollIcon size={12}/> Visto</button> )}
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 transition-transform active:scale-90 ${t.isNewFinish ? 'text-amber-300' : 'text-zinc-700'}`}><RotateCcw size={16} /></button>
-                <button onClick={() => { const hVal = Math.floor(t.initialSeconds / 3600); const mVal = Math.floor((t.initialSeconds % 3600) / 60); const sVal = t.initialSeconds % 60; setEditBuf({ label: t.label, h: hVal > 0 ? String(hVal) : '', m: mVal > 0 ? String(mVal) : '', s: sVal > 0 ? String(sVal) : '' }); setEditingId(t.id); }} className={`p-1.5 transition-transform active:scale-90 ${t.isNewFinish ? 'text-amber-400' : 'text-zinc-700'}`}><Edit2 size={16} /></button>
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 transition-transform active:scale-90 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-amber-300' : 'text-zinc-600')}`}>{t.isRunning && t.remainingSeconds > 0 ? <Pause size={18} /> : <Play size={18} />}</button>
-                <button onClick={async () => { const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); }} className={`p-1.5 transition-transform active:scale-90 ${t.isNewFinish ? 'text-amber-500' : 'text-zinc-800'}`}><Trash2 size={16} /></button>
+                {t.isNewFinish && ( <button onClick={(e) => { e.stopPropagation(); dismissNewFinish(t.id); }} className="p-1 px-2.5 bg-amber-600 text-white rounded-lg font-black text-[9px] uppercase flex items-center gap-1 animate-pulse mr-1 shadow-[0_0_10px_rgba(245,158,11,0.5)]"><RolledScrollIcon size={12}/> Visto</button> )}
+                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${t.isNewFinish ? 'text-amber-300' : 'text-zinc-700'}`}><RotateCcw size={16} /></button>
+                <button onClick={() => { const hVal = Math.floor(t.initialSeconds / 3600); const mVal = Math.floor((t.initialSeconds % 3600) / 60); const sVal = t.initialSeconds % 60; setEditBuf({ label: t.label, h: hVal > 0 ? String(hVal) : '', m: mVal > 0 ? String(mVal) : '', s: sVal > 0 ? String(sVal) : '' }); setEditingId(t.id); }} className={`p-1.5 ${t.isNewFinish ? 'text-amber-400' : 'text-zinc-700'}`}><Edit2 size={16} /></button>
+                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-amber-300' : 'text-zinc-600')}`}><Pause size={18} className={t.isRunning && t.remainingSeconds > 0 ? 'block' : 'hidden'}/><Play size={18} className={!t.isRunning && t.remainingSeconds > 0 ? 'block' : 'hidden'} /></button>
+                <button onClick={async () => { const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); }} className={`p-1.5 ${t.isNewFinish ? 'text-amber-500' : 'text-zinc-800'}`}><Trash2 size={16} /></button>
               </>
             )}
           </div>
@@ -1177,7 +1273,6 @@ const App = () => {
     );
   };
 
-  // CONFIGURACIÓN DINÁMICA DE LA ALERTA GIGANTE
   const alertConfig = {
       war: { bg: 'bg-red-600', border: 'border-red-400', text: 'text-red-950', btnBg: 'bg-red-950', btnText: 'text-red-400', icon: <HornIcon size={64} className="mx-auto mb-4 animate-bounce text-red-950"/> },
       task: { bg: 'bg-amber-500', border: 'border-amber-300', text: 'text-amber-950', btnBg: 'bg-amber-950', btnText: 'text-amber-400', icon: <RolledScrollIcon size={64} className="mx-auto mb-4 animate-bounce text-amber-950"/> },
@@ -1206,7 +1301,7 @@ const App = () => {
                     <Activity size={16} className="text-zinc-500"/>
                     <span className="text-xs font-black uppercase text-zinc-400 tracking-widest">Terminal de Registro</span>
                 </div>
-                <button onClick={() => setShowLogs(false)} className="text-zinc-500 transition-opacity active:opacity-50 p-1"><X size={16}/></button>
+                <button onClick={() => setShowLogs(false)} className="text-zinc-500 p-1"><X size={16}/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-[10px] custom-scrollbar">
                 {actionLog.map((log, i) => (
@@ -1225,7 +1320,7 @@ const App = () => {
       {activeHelp && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setActiveHelp(null)}>
           <div className="bg-zinc-900 border border-blue-500 p-6 rounded-3xl max-w-sm w-full relative shadow-[0_0_40px_rgba(59,130,246,0.3)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-             <button onClick={() => setActiveHelp(null)} className="absolute top-4 right-4 text-zinc-500 transition-opacity active:opacity-50 p-2"><X size={20}/></button>
+             <button onClick={() => setActiveHelp(null)} className="absolute top-4 right-4 text-zinc-500 p-2"><X size={20}/></button>
              <div className="flex items-center gap-3 mb-4 text-blue-400">
                <Info size={24} />
                <h3 className="font-black uppercase text-lg leading-tight">{t(`help_${activeHelp}_title`)}</h3>
@@ -1233,69 +1328,9 @@ const App = () => {
              <div className="text-zinc-300 text-sm font-bold whitespace-pre-wrap leading-relaxed">
                  {t(`help_${activeHelp}_desc`)}
              </div>
-             <button onClick={() => setActiveHelp(null)} className="w-full mt-6 bg-blue-900/30 text-blue-400 py-3 rounded-xl font-black uppercase text-xs transition-opacity active:opacity-50">{t('understood')}</button>
+             <button onClick={() => setActiveHelp(null)} className="w-full mt-6 bg-blue-900/30 text-blue-400 py-3 rounded-xl font-black uppercase text-xs">{t('understood')}</button>
           </div>
         </div>
-      )}
-
-      <audio id="silent-audio-hack" loop autoPlay playsInline style={{display: 'none'}}>
-          <source src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vwAAABMYXZjNTkuMzcuMTAwAAAAAAAAAAAAAAAAJAAAAAAAAAAAScCAgP/zhAAAAAAAAAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV" type="audio/mpeg" />
-      </audio>
-
-      {dragState.isDragging && (
-          <div className="fixed z-[9999] pointer-events-none is-ghost shadow-[0_20px_50px_rgba(245,158,11,0.5)] border-2 border-amber-500 rounded-xl bg-zinc-900/95 px-4 py-3 backdrop-blur" style={{ left: dragState.pos.x - 70, top: dragState.pos.y - 30 }}>
-              <span className="text-amber-500 font-black text-xs uppercase flex items-center gap-2 tracking-widest"><GripVertical size={14}/> {t('moving')}</span>
-          </div>
-      )}
-
-      {showSoundMenu && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md pointer-events-auto">
-            <div className="bg-zinc-900 border border-amber-500 w-full max-w-sm rounded-[32px] shadow-[0_0_50px_rgba(245,158,11,0.15)] relative animate-in zoom-in duration-300 flex flex-col max-h-[85vh]">
-               <div className="p-5 pb-3 border-b border-zinc-800 flex justify-between items-center shrink-0">
-                   <div className="flex items-center gap-2"><Music className="text-amber-500" size={24} /><h2 className="text-lg font-black text-white uppercase leading-none tracking-wide">{t('soundConfig')}</h2></div>
-                   <button onClick={() => { setShowSoundMenu(false); stopInfiniteAlarm(); }} className="text-zinc-500 transition-opacity active:opacity-50 p-1"><X size={24}/></button>
-               </div>
-               <div className="overflow-y-auto p-4 space-y-6">
-                   <div>
-                       <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><HornIcon size={14}/> {t('earlyWarnings')}</h3>
-                       <div className="space-y-1.5">
-                           {SOUND_PROFILES.map(prof => (
-                               <div key={`war-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer ${warSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800'}`} onClick={() => { setWarSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ warSound: prof.id }); }}>
-                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 transition-opacity active:opacity-50"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${warSound === prof.id ? 'text-amber-500' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{warSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
-                               </div>
-                           ))}
-                       </div>
-                   </div>
-                   <div>
-                       <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><RolledScrollIcon size={14}/> {t('taskFinished')}</h3>
-                       <div className="space-y-1.5">
-                           {SOUND_PROFILES.map(prof => (
-                               <div key={`task-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer ${taskSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800'}`} onClick={() => { setTaskSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ taskSound: prof.id }); }}>
-                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 transition-opacity active:opacity-50"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${taskSound === prof.id ? 'text-amber-400' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{taskSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
-                               </div>
-                           ))}
-                       </div>
-                   </div>
-                   <div>
-                       <h3 className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-3 flex items-center gap-2"><CrownScrollIcon size={14}/> {t('clanMessages')}</h3>
-                       <div className="p-4 bg-purple-900/10 border border-purple-500/20 rounded-xl text-center">
-                           <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">MÓDULO DE SERVIDOR EN CONSTRUCCIÓN</span>
-                           <span className="text-[9px] text-zinc-500">Requiere backend de Telegram para disparar push a la alianza.</span>
-                       </div>
-                   </div>
-               </div>
-            </div>
-        </div>
-      )}
-
-      {confirmBoxReset && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md text-center">
-            <div className="bg-zinc-900 w-full max-w-xs p-6 rounded-[32px] shadow-2xl animate-in zoom-in duration-300 border border-amber-500">
-              <AlertTriangle size={48} className="mx-auto mb-4 text-amber-500"/><h2 className="text-xl font-black text-white uppercase mb-2 leading-none">{t('confirmResetTitle')}</h2>
-              <p className="text-zinc-400 font-bold mb-6 text-sm leading-tight whitespace-pre-wrap">{t('confirmResetDesc')} <span className="text-amber-500">{confirmBoxReset.name}</span>?</p>
-              <div className="flex gap-3"><button onClick={() => setConfirmBoxReset(null)} className="flex-1 bg-amber-600 text-white py-3 rounded-xl font-black text-xs uppercase shadow-lg transition-opacity active:opacity-50">{t('cancel')}</button><button onClick={executeBoxReset} className="flex-1 bg-zinc-800 text-zinc-400 py-3 rounded-xl font-black text-xs uppercase transition-opacity active:opacity-50 text-red-400">{t('resetAll')}</button></div>
-            </div>
-          </div>
       )}
 
       <div className="max-w-md mx-auto space-y-4 pt-2">
@@ -1303,31 +1338,31 @@ const App = () => {
           <div className="flex items-center gap-1.5">
             <ShieldAlert className="text-amber-500 shrink-0" size={20} />
             <h1 className="text-lg xs:text-xl font-black text-amber-500 uppercase leading-none tracking-tighter hidden xs:block mr-1">{t('appTitle')}</h1>
-            <button onClick={() => setActiveHelp('header')} className="text-zinc-600 transition-opacity active:opacity-50 p-1"><Info size={14}/></button>
+            <button onClick={() => setActiveHelp('header')} className="text-zinc-600 p-1"><Info size={14}/></button>
 
-            <button onClick={toggleLanguage} className="flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-md px-1.5 py-1 xs:ml-2 transition-opacity active:opacity-50">
+            <button onClick={toggleLanguage} className="flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-md px-1.5 py-1 xs:ml-2">
                 <Globe size={12} className="text-zinc-400"/>
                 <span className="text-[10px] font-black text-white uppercase">{lang}</span>
             </button>
-            <button onClick={() => setShowLogs(!showLogs)} className={`ml-1 flex items-center p-1.5 rounded-md border transition-opacity active:opacity-50 ${showLogs ? 'bg-zinc-700 border-zinc-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
+            <button onClick={() => setShowLogs(!showLogs)} className={`ml-1 flex items-center p-1.5 rounded-md border ${showLogs ? 'bg-zinc-700 border-zinc-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
                 <TerminalSquare size={14}/>
             </button>
           </div>
           
           <div className="flex gap-1">
-            <button onClick={toggleWakeLock} className={`p-1.5 rounded-lg border transition-opacity active:opacity-50 ${wakeLockActive ? 'bg-blue-600 text-white border-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><Eye size={18} /></button>
-            <button onClick={toggleSoundProfile} className={`p-1.5 rounded-lg border transition-opacity active:opacity-50 ${soundProfile !== 'muted' ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>{soundProfile === 'siren' ? <Volume2 size={18}/> : soundProfile === 'radar' ? <Volume1 size={18}/> : <VolumeX size={18}/>}</button>
-            <button onClick={() => setShowSoundMenu(true)} className="p-1.5 bg-zinc-800 text-amber-500 border border-zinc-700 rounded-lg shadow-lg transition-opacity active:opacity-50"><Music size={18}/></button>
-            <button onClick={() => { const next = !vibrateOn; setVibrateOn(next); if(!next) stopInfiniteAlarm(); if(syncRef.current) syncRef.current({ vibrateOn: next }); addLog(`Vibración de alertas: ${next ? 'ON' : 'OFF'}`, 'info'); }} className={`p-1.5 rounded-lg border transition-opacity active:opacity-50 ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><VibrateIcon size={18}/></button>
+            <button onClick={toggleWakeLock} className={`p-1.5 rounded-lg border ${wakeLockActive ? 'bg-blue-600 text-white border-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><Eye size={18} /></button>
+            <button onClick={toggleSoundProfile} className={`p-1.5 rounded-lg border ${soundProfile !== 'muted' ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>{soundProfile === 'siren' ? <Volume2 size={18}/> : soundProfile === 'radar' ? <Volume1 size={18}/> : <VolumeX size={18}/>}</button>
+            <button onClick={() => setShowSoundMenu(true)} className="p-1.5 bg-zinc-800 text-amber-500 border border-zinc-700 rounded-lg shadow-lg"><Music size={18}/></button>
+            <button onClick={() => { const next = !vibrateOn; setVibrateOn(next); if(!next) stopInfiniteAlarm(); if(syncRef.current) syncRef.current({ vibrateOn: next }); addLog(`Vibración de alertas: ${next ? 'ON' : 'OFF'}`, 'info'); }} className={`p-1.5 rounded-lg border ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><VibrateIcon size={18}/></button>
             
-            <button onClick={toggleSystemNotifications} className={`p-1.5 rounded-lg border transition-opacity active:opacity-50 ${sysNotifOn ? 'bg-emerald-600 text-white border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>
+            <button onClick={toggleSystemNotifications} className={`p-1.5 rounded-lg border ${sysNotifOn ? 'bg-emerald-600 text-white border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>
                 <Smartphone size={18}/>
             </button>
           </div>
         </div>
 
         <div className="flex justify-center items-center mb-4">
-            <div className={`border rounded-full px-5 py-2 shadow-lg flex items-center gap-3 backdrop-blur-sm whitespace-nowrap transition-colors duration-500 ${wakeLockActive ? 'bg-blue-900/20 border-blue-500/50 shadow-[0_0_20px_rgba(37,99,235,0.15)]' : 'bg-zinc-900/80 border-zinc-700/50'}`}>
+            <div className={`border rounded-full px-5 py-2 shadow-lg flex items-center gap-3 backdrop-blur-sm whitespace-nowrap duration-500 ${wakeLockActive ? 'bg-blue-900/20 border-blue-500/50 shadow-[0_0_20px_rgba(37,99,235,0.15)]' : 'bg-zinc-900/80 border-zinc-700/50'}`}>
                 <Clock className={wakeLockActive ? 'text-blue-500 shrink-0' : 'text-amber-500 shrink-0'} size={16} />
                 <div className="flex items-baseline gap-1.5"><span className="text-3xl font-mono font-light text-white tracking-widest leading-none">{currentFormatted.time}</span><span className={`text-sm font-black uppercase tracking-wider ${wakeLockActive ? 'text-blue-300' : 'text-zinc-400'}`}>{currentFormatted.ampm}</span></div>
             </div>
@@ -1340,7 +1375,7 @@ const App = () => {
           <div className="pt-3 border-t border-zinc-800/50 flex justify-between items-end">
             <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-zinc-500 font-black uppercase tracking-wide mb-1">{t('endTime')}</span>
-                <button onClick={() => setActiveHelp('time')} className="text-zinc-600 transition-opacity active:opacity-50 mb-1"><Info size={12}/></button>
+                <button onClick={() => setActiveHelp('time')} className="text-zinc-600 mb-1"><Info size={12}/></button>
             </div>
             <div className="flex items-baseline gap-1 text-red-500"><span className="text-3xl font-mono font-black leading-none tracking-tight">{globalTimePart}</span><span className="text-sm font-black uppercase mb-0.5">{globalAmpmPart}</span></div>
           </div>
@@ -1348,7 +1383,7 @@ const App = () => {
           <div className="mt-5 border-t border-zinc-800/50 pt-4">
               <div className="flex justify-between items-center mb-3">
                   <span className="text-[9px] font-black text-red-500/80 uppercase tracking-widest flex items-center gap-1"><HornIcon size={10}/> {t('earlyWarnings')}</span>
-                  <button onClick={syncWar} className="bg-zinc-800 text-zinc-400 border border-zinc-700 text-[9px] font-black py-1 px-3 rounded-full flex items-center gap-1 transition-opacity active:opacity-50"><RotateCcw size={10} /> {t('sync')}</button>
+                  <button onClick={syncWar} className="bg-zinc-800 text-zinc-400 border border-zinc-700 text-[9px] font-black py-1 px-3 rounded-full flex items-center gap-1"><RotateCcw size={10} /> {t('sync')}</button>
               </div>
               <div className="flex gap-2 mb-3">
                   <div className="relative flex-1"><input type="text" inputMode="numeric" placeholder="0" value={inputH} onChange={handleNum(setInputH)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 text-xl font-mono text-center outline-none focus:border-red-500" /><p className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-600 font-bold uppercase">H</p></div>
@@ -1360,11 +1395,11 @@ const App = () => {
                           return (
                               <div key={a.id} className={`flex-[2] flex items-center justify-between rounded-xl border ${a.on ? 'bg-red-600 border-red-500' : 'bg-zinc-950 border-zinc-800'}`}>
                                   <div className="flex flex-1 items-center justify-center gap-0.5 px-1 py-1"><input type="text" inputMode="numeric" placeholder="H" value={a.h} disabled={a.on} onChange={e => handleCustomAlarmChange('h', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} />:<input type="text" inputMode="numeric" placeholder="M" value={a.m} disabled={a.on} onChange={e => handleCustomAlarmChange('m', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} />:<input type="text" inputMode="numeric" placeholder="S" value={a.s} disabled={a.on} onChange={e => handleCustomAlarmChange('s', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} /></div>
-                                  <button onClick={() => toggleAlarm(a.id)} className={`h-full px-2.5 rounded-r-xl border-l flex items-center justify-center transition-colors ${a.on ? 'border-red-700 bg-red-700' : 'border-zinc-800 hover:bg-zinc-800'}`}><div className={`w-2 h-2 rounded-full ${a.on ? 'bg-white shadow-[0_0_5px_white]' : 'bg-zinc-700'}`} /></button>
+                                  <button onClick={() => toggleAlarm(a.id)} className={`h-full px-2.5 rounded-r-xl border-l flex items-center justify-center ${a.on ? 'border-red-700 bg-red-700' : 'border-zinc-800'}`}><div className={`w-2 h-2 rounded-full ${a.on ? 'bg-white shadow-[0_0_5px_white]' : 'bg-zinc-700'}`} /></button>
                               </div>
                           );
                       }
-                      return ( <button key={a.id} onClick={() => toggleAlarm(a.id)} className={`flex-1 rounded-xl text-xs font-black transition-opacity active:opacity-50 border ${a.on ? 'bg-red-600 text-white border-red-500 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'bg-zinc-950 text-zinc-500 border-zinc-800'}`}>{a.mins}M</button> );
+                      return ( <button key={a.id} onClick={() => toggleAlarm(a.id)} className={`flex-1 rounded-xl text-xs font-black border ${a.on ? 'bg-red-600 text-white border-red-500 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'bg-zinc-950 text-zinc-500 border-zinc-800'}`}>{a.mins}M</button> );
                   })}
               </div>
           </div>
@@ -1372,20 +1407,20 @@ const App = () => {
 
         <div className="grid grid-cols-2 gap-2 relative">
             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                 <button onClick={() => setActiveHelp('creation')} className="bg-zinc-900 border border-zinc-700 text-zinc-500 transition-opacity active:opacity-50 p-1.5 rounded-full shadow-lg"><Info size={14}/></button>
+                 <button onClick={() => setActiveHelp('creation')} className="bg-zinc-900 border border-zinc-700 text-zinc-500 p-1.5 rounded-full shadow-lg"><Info size={14}/></button>
             </div>
             
-            <button onClick={() => { setShowCronoForm(!showCronoForm); setShowBoxForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-opacity active:opacity-50 ${showCronoForm ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
+            <button onClick={() => { setShowCronoForm(!showCronoForm); setShowBoxForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 ${showCronoForm ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
                 {t('addCrono')}
             </button>
-            <button onClick={() => { setShowBoxForm(!showBoxForm); setShowCronoForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-opacity active:opacity-50 ${showBoxForm ? 'bg-blue-600 text-white border-blue-600' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
+            <button onClick={() => { setShowBoxForm(!showBoxForm); setShowCronoForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 ${showBoxForm ? 'bg-blue-600 text-white border-blue-600' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
                 {t('addSection')}
             </button>
         </div>
 
         {showCronoForm && (
             <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-3 space-y-3 animate-in slide-in-from-top-2">
-                <div className="flex justify-between items-center px-1"><span className="text-[10px] font-black uppercase text-zinc-500">{t('createCronoTitle')}</span><div className="flex gap-2"><button onClick={() => changeDraftCount(false, false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 transition-opacity active:opacity-50"><Minus size={14}/></button><button onClick={() => changeDraftCount(false, true)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 transition-opacity active:opacity-50"><Plus size={14}/></button></div></div>
+                <div className="flex justify-between items-center px-1"><span className="text-[10px] font-black uppercase text-zinc-500">{t('createCronoTitle')}</span><div className="flex gap-2"><button onClick={() => changeDraftCount(false, false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400"><Minus size={14}/></button><button onClick={() => changeDraftCount(false, true)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400"><Plus size={14}/></button></div></div>
                 <div className="space-y-2">
                     {cronoDrafts.map((draft, i) => (
                         <div key={draft.id} className="space-y-2 p-2 bg-black/40 rounded-xl border border-zinc-800 animate-in fade-in">
@@ -1398,7 +1433,7 @@ const App = () => {
                         </div>
                     ))}
                 </div>
-                <button onClick={addCrono} className="w-full bg-amber-600 text-white rounded-xl py-3 font-black text-[10px] uppercase shadow-lg transition-opacity active:opacity-50">{t('createCronoBtn')}</button>
+                <button onClick={addCrono} className="w-full bg-amber-600 text-white rounded-xl py-3 font-black text-[10px] uppercase shadow-lg">{t('createCronoBtn')}</button>
             </div>
         )}
 
@@ -1407,14 +1442,14 @@ const App = () => {
                 <input type="text" placeholder={`${t('sectionNamePlaceholder')} ${boxes.length + 1}`} value={newBoxLabel} onChange={e => setNewBoxLabel(e.target.value)} className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-xs font-bold w-full outline-none uppercase placeholder-zinc-600" />
                 <div className="flex justify-between items-center px-1">
                     <span className="text-[9px] font-black text-zinc-600 uppercase">{t('banner')}</span>
-                    <div className="flex gap-1.5">{COLORS.map(c => <button key={c.hex} onClick={() => setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full border-2 transition-transform ${newBoxColor === c.hex ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{ backgroundColor: c.hex }} />)}</div>
+                    <div className="flex gap-1.5">{COLORS.map(c => <button key={c.hex} onClick={() => setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full border-2 ${newBoxColor === c.hex ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{ backgroundColor: c.hex }} />)}</div>
                 </div>
                 <div className="flex items-center justify-between px-1">
                     <label className="flex items-center gap-2 cursor-pointer group">
-                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${includeInitialCrono ? 'bg-blue-600 border-blue-600' : 'border-zinc-700'}`}><input type="checkbox" className="hidden" checked={includeInitialCrono} onChange={() => setIncludeInitialCrono(!includeInitialCrono)} />{includeInitialCrono && <Check size={12} className="text-white"/>}</div>
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase transition-opacity active:opacity-50">{t('includeCronos')}</span>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center ${includeInitialCrono ? 'bg-blue-600 border-blue-600' : 'border-zinc-700'}`}><input type="checkbox" className="hidden" checked={includeInitialCrono} onChange={() => setIncludeInitialCrono(!includeInitialCrono)} />{includeInitialCrono && <Check size={12} className="text-white"/>}</div>
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase">{t('includeCronos')}</span>
                     </label>
-                    {includeInitialCrono && ( <div className="flex gap-2"><button onClick={() => changeDraftCount(true, false)} className="p-1 bg-zinc-800 rounded text-zinc-400 transition-opacity active:opacity-50"><Minus size={12}/></button><button onClick={() => changeDraftCount(true, true)} className="p-1 bg-zinc-800 rounded text-zinc-400 transition-opacity active:opacity-50"><Plus size={12}/></button></div> )}
+                    {includeInitialCrono && ( <div className="flex gap-2"><button onClick={() => changeDraftCount(true, false)} className="p-1 bg-zinc-800 rounded text-zinc-400"><Minus size={12}/></button><button onClick={() => changeDraftCount(true, true)} className="p-1 bg-zinc-800 rounded text-zinc-400"><Plus size={12}/></button></div> )}
                 </div>
 
                 {includeInitialCrono && (
@@ -1431,7 +1466,7 @@ const App = () => {
                         ))}
                     </div>
                 )}
-                <button onClick={addBox} className="w-full bg-blue-600 text-white rounded-xl py-3 font-black text-[10px] uppercase shadow-lg transition-opacity active:opacity-50">{t('createSectionBtn')}</button>
+                <button onClick={addBox} className="w-full bg-blue-600 text-white rounded-xl py-3 font-black text-[10px] uppercase shadow-lg">{t('createSectionBtn')}</button>
             </div>
         )}
 
@@ -1460,11 +1495,11 @@ const App = () => {
                     const allPausedOrFinished = activeTasks.length === 0;
                     
                     return (
-                        <div key={box.id} className={`rounded-xl transition-all relative flex flex-col ${isThisBoxDragged ? 'opacity-30 scale-[0.98] border-dashed border-2 border-amber-500' : 'opacity-100 shadow-lg'}`}>
+                        <div key={box.id} className={`rounded-xl relative flex flex-col ${isThisBoxDragged ? 'opacity-30 scale-[0.98] border-dashed border-2 border-amber-500' : 'opacity-100 shadow-lg'}`}>
                             <div 
                                 data-dnd-target={editingBoxId !== box.id ? "true" : "false"} data-dnd-id={box.id} data-dnd-type="box-header"
                                 onPointerDown={(e) => { if(editingBoxId !== box.id) handleItemPointerDown(e, box.id, 'box'); }} onContextMenu={(e) => e.preventDefault()} 
-                                className={`flex flex-col justify-between overflow-hidden border border-zinc-800 bg-zinc-900/95 relative z-10 select-none ${editingBoxId !== box.id ? 'cursor-grab active:cursor-grabbing' : ''} ${box.isCollapsed ? 'rounded-xl shadow-md' : 'rounded-t-xl'}`}
+                                className={`flex flex-col justify-between overflow-hidden border border-zinc-800 bg-zinc-900/95 relative z-10 select-none ${editingBoxId !== box.id ? 'cursor-grab' : ''} ${box.isCollapsed ? 'rounded-xl shadow-md' : 'rounded-t-xl'}`}
                                 style={{ borderLeft: `5px solid ${box.color}` }}
                             >
                                 {isHeaderTarget && dropIndicator.position === 'before' && <div className="absolute -top-1 left-0 right-0 h-1.5 bg-amber-500 rounded-full shadow-[0_0_10px_#f59e0b] pointer-events-none z-40" />}
@@ -1472,8 +1507,8 @@ const App = () => {
 
                                 {editingBoxId === box.id ? (
                                     <div className="flex-1 flex flex-col p-3 bg-zinc-900/90 w-full animate-in fade-in">
-                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full ${newBoxColor === c.hex ? 'border-2 border-white scale-110 shadow-lg' : 'opacity-40'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white transition-opacity active:opacity-50 shadow-md"><Check size={14}/></button></div></div>
-                                        <div className="flex items-center justify-between px-1 py-2 border-t border-zinc-800/80"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest flex items-center gap-1.5"><Plus size={10}/> {t('addCrono')}</span><div className="flex gap-1.5"><button onClick={() => handleEditBoxDraftCount(false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm"><Minus size={12}/></button><button onClick={() => handleEditBoxDraftCount(true)} className="p-1.5 bg-blue-600/20 text-blue-400 rounded-lg transition-opacity active:opacity-50 shadow-sm"><Plus size={12}/></button></div></div>
+                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full ${newBoxColor === c.hex ? 'border-2 border-white scale-110 shadow-lg' : 'opacity-40'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white shadow-md"><Check size={14}/></button></div></div>
+                                        <div className="flex items-center justify-between px-1 py-2 border-t border-zinc-800/80"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest flex items-center gap-1.5"><Plus size={10}/> {t('addCrono')}</span><div className="flex gap-1.5"><button onClick={() => handleEditBoxDraftCount(false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 shadow-sm"><Minus size={12}/></button><button onClick={() => handleEditBoxDraftCount(true)} className="p-1.5 bg-blue-600/20 text-blue-400 rounded-lg shadow-sm"><Plus size={12}/></button></div></div>
                                         <div className="space-y-1.5 mt-1">
                                             {editBoxDrafts.map((draft, i) => (
                                                 <div key={draft.id} className="flex gap-1.5 items-center bg-black/40 p-1.5 rounded-lg border border-zinc-800/80">
@@ -1485,17 +1520,17 @@ const App = () => {
                                     </div>
                                 ) : (
                                     <div className="flex-1 flex items-center justify-between px-4 py-3 pointer-events-none relative h-[52px]">
-                                        <div className={`absolute left-4 flex items-center gap-3 transition-all duration-300 ${isMenuOpen ? '-translate-x-full opacity-0' : 'translate-x-0 opacity-100'}`}>
+                                        <div className={`absolute left-4 flex items-center gap-3 duration-300 ${isMenuOpen ? '-translate-x-full opacity-0' : 'translate-x-0 opacity-100'}`}>
                                             <span className="text-[13px] font-black text-white uppercase tracking-wider" style={{ color: box.color }}>{box.name}</span><span className="text-[10px] font-black text-zinc-300 bg-zinc-800/80 border border-zinc-700/50 px-2 py-0.5 rounded-md shadow-inner">{boxTasks.length}</span>
                                         </div>
 
                                         <div className="absolute right-3 flex items-center pointer-events-auto h-full">
                                             {isMenuOpen ? (
                                                 <div className="flex items-center gap-1.5 animate-in slide-in-from-right-8 fade-in duration-200">
-                                                    <button onClick={() => setConfirmBoxReset({id: box.id, name: box.name})} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm" title="Reiniciar todos"><RotateCcw size={16}/></button><button onClick={() => handleBoxPlayPause(box.id, !allPausedOrFinished)} className={`p-2 bg-zinc-800 border border-zinc-700 rounded-lg transition-opacity active:opacity-50 shadow-sm`} title={!allPausedOrFinished ? 'Pausar todos' : 'Reanudar todos'}>{!allPausedOrFinished ? <Pause size={16}/> : <Play size={16}/>}</button><div className="w-px h-6 bg-zinc-700 mx-1"></div><button onClick={() => { setEditingBoxId(box.id); setEditBuf({label: box.name}); setNewBoxColor(box.color); setEditBoxDrafts([]); setOpenBoxMenuId(null); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm"><Edit2 size={16}/></button><button onClick={async () => { const nb = boxes.filter(b => b.id !== box.id); let nr = rootOrder.filter(i => i.id !== box.id); const nt = tasks.map(t => { if (t.boxId === box.id) { nr.push({ id: t.id, type: 'task' }); return { ...t, boxId: null }; } return t; }); setBoxes(nb); setRootOrder(nr); setTasks(nt); if(syncRef.current) syncRef.current({boxes: nb, rootOrder: nr, tasks: nt}); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm"><Trash2 size={16}/></button><button onClick={() => setOpenBoxMenuId(null)} className="p-2 ml-1 text-zinc-500 transition-opacity active:opacity-50 rounded-full"><X size={18}/></button>
+                                                    <button onClick={() => setConfirmBoxReset({id: box.id, name: box.name})} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 shadow-sm" title="Reiniciar todos"><RotateCcw size={16}/></button><button onClick={() => handleBoxPlayPause(box.id, !allPausedOrFinished)} className={`p-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-sm ${!allPausedOrFinished ? 'text-zinc-400' : 'text-zinc-400'}`} title={!allPausedOrFinished ? 'Pausar todos' : 'Reanudar todos'}>{!allPausedOrFinished ? <Pause size={16}/> : <Play size={16}/>}</button><div className="w-px h-6 bg-zinc-700 mx-1"></div><button onClick={() => { setEditingBoxId(box.id); setEditBuf({label: box.name}); setNewBoxColor(box.color); setEditBoxDrafts([]); setOpenBoxMenuId(null); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 shadow-sm"><Edit2 size={16}/></button><button onClick={async () => { const nb = boxes.filter(b => b.id !== box.id); let nr = rootOrder.filter(i => i.id !== box.id); const nt = tasks.map(t => { if (t.boxId === box.id) { nr.push({ id: t.id, type: 'task' }); return { ...t, boxId: null }; } return t; }); setBoxes(nb); setRootOrder(nr); setTasks(nt); if(syncRef.current) syncRef.current({boxes: nb, rootOrder: nr, tasks: nt}); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 shadow-sm"><Trash2 size={16}/></button><button onClick={() => setOpenBoxMenuId(null)} className="p-2 ml-1 text-zinc-500 rounded-full"><X size={18}/></button>
                                                 </div>
                                             ) : (
-                                                <div className="flex items-center gap-1.5 animate-in fade-in"><button onClick={() => setOpenBoxMenuId(box.id)} className="p-2 text-zinc-500 transition-opacity active:opacity-50 rounded-lg cursor-pointer"><Settings size={20} /></button><div className="w-px h-6 bg-zinc-800"></div><button onClick={() => toggleBoxCollapse(box.id)} className="p-2 text-zinc-400 transition-opacity active:opacity-50 rounded-lg cursor-pointer">{box.isCollapsed ? <ChevronDown size={22}/> : <ChevronUp size={22}/>}</button></div>
+                                                <div className="flex items-center gap-1.5 animate-in fade-in"><button onClick={() => setOpenBoxMenuId(box.id)} className="p-2 text-zinc-500 rounded-lg cursor-pointer"><Settings size={20} /></button><div className="w-px h-6 bg-zinc-800"></div><button onClick={() => toggleBoxCollapse(box.id)} className="p-2 text-zinc-400 rounded-lg cursor-pointer">{box.isCollapsed ? <ChevronDown size={22}/> : <ChevronUp size={22}/>}</button></div>
                                             )}
                                         </div>
                                     </div>
@@ -1504,7 +1539,7 @@ const App = () => {
                             
                             <div 
                                 data-dnd-target="true" data-dnd-id={box.id} data-dnd-type="box-content"
-                                className={`border-zinc-800 transition-colors relative bg-zinc-950/40 min-h-[40px] ${isContentTarget ? 'drop-inside-target' : ''} ${box.isCollapsed ? 'border-0 rounded-b-xl' : 'border-l border-r p-1.5 pt-3'}`}
+                                className={`border-zinc-800 relative bg-zinc-950/40 min-h-[40px] ${isContentTarget ? 'drop-inside-target' : ''} ${box.isCollapsed ? 'border-0 rounded-b-xl' : 'border-l border-r p-1.5 pt-3'}`}
                             >
                                 {isContentTarget && dragState.item?.type === 'task' && <div className="absolute inset-0 border-2 border-amber-500 border-dashed m-1 rounded-lg pointer-events-none opacity-50 z-40" />}
                                 
@@ -1522,7 +1557,7 @@ const App = () => {
                                                     <div className="flex items-center justify-end gap-1.5 flex-1 min-w-0 pl-3"><span className="text-[9px] text-amber-400/80 font-black tracking-widest uppercase truncate text-right">{nextTask.label}</span><span className="text-[13px] font-mono font-bold text-amber-300 tracking-tighter shrink-0">{formatTime(nextTask.remainingSeconds)}</span></div>
                                                 ) : pausedNextTask ? (
                                                     <div className="flex items-center justify-end gap-1.5 flex-1 min-w-0 pl-3"><span className="text-[9px] text-zinc-500 font-black tracking-widest uppercase truncate text-right">{pausedNextTask.label}</span><span className="text-[13px] font-mono font-bold text-yellow-600/80 tracking-tighter shrink-0">{formatTime(pausedNextTask.remainingSeconds)}</span></div>
-                                                ) : finishedTasks.length > 0 ? ( <div className="flex-1 flex justify-end pr-2"><Check size={14} className="text-amber-500"/></div> ) : null}
+                                                ) : finishedTasks.length > 0 ? ( <div className="flex-1 flex justify-end pr-2"><ScrollIcon size={14} className="text-amber-500"/></div> ) : null}
                                             </div>
                                         ) : ( <div className="py-2 text-center opacity-40"><span className="text-[9px] font-black uppercase tracking-widest text-zinc-600">{t('emptySection')}</span></div> )}
                                     </div>
@@ -1537,9 +1572,9 @@ const App = () => {
                             {!box.isCollapsed && (
                                 <div 
                                     data-dnd-target="true" data-dnd-id={box.id} data-dnd-type="box-footer"
-                                    className={`h-8 border border-zinc-800 border-t-0 rounded-b-xl flex items-center justify-center transition-all ${isFooterTarget ? 'drop-extract-target h-12' : 'bg-zinc-900/30'}`}
+                                    className={`h-8 border border-zinc-800 border-t-0 rounded-b-xl flex items-center justify-center ${isFooterTarget ? 'drop-extract-target h-12' : 'bg-zinc-900/30'}`}
                                 >
-                                    {dragState.item?.type === 'task' ? ( <div className={`text-[8px] font-black uppercase flex items-center gap-1 transition-colors pointer-events-none ${isFooterTarget ? 'text-amber-500 scale-110' : 'text-zinc-600'}`}><ArrowDownToLine size={10} /> {isFooterTarget ? t('dropToExtract') : t('exitZone')}</div> ) : ( <div className="w-8 h-1 bg-zinc-800/50 rounded-full pointer-events-none" /> )}
+                                    {dragState.item?.type === 'task' ? ( <div className={`text-[8px] font-black uppercase flex items-center gap-1 pointer-events-none ${isFooterTarget ? 'text-amber-500 scale-110' : 'text-zinc-600'}`}><ArrowDownToLine size={10} /> {isFooterTarget ? t('dropToExtract') : t('exitZone')}</div> ) : ( <div className="w-8 h-1 bg-zinc-800/50 rounded-full pointer-events-none" /> )}
                                 </div>
                             )}
 
@@ -1562,7 +1597,7 @@ const App = () => {
               
               <button 
                 onClick={() => { stopInfiniteAlarm(); setActiveAlert(null); }} 
-                className={`w-full py-4 rounded-2xl font-black text-lg uppercase shadow-xl tracking-widest transition-opacity active:opacity-50 border border-black/30 ${currentAlertConf.btnBg} ${currentAlertConf.btnText}`}
+                className={`w-full py-4 rounded-2xl font-black text-lg uppercase shadow-xl tracking-widest border border-black/30 ${currentAlertConf.btnBg} ${currentAlertConf.btnText}`}
               >
                 {alertQueue.length > 0 ? t('next') : t('understood')}
               </button>
