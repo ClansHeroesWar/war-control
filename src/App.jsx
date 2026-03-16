@@ -93,7 +93,7 @@ const dict = {
     typeRelaxing: "Relaxing",
     typeSilent: "Silent",
     help_header_title: "Global Control Panel",
-    help_header_desc: "• Globe: Changes system language.\n• Terminal: Opens Debug Logs.\n• Eye: Prevents screen from sleeping.\n• Volume: System audio toggle.\n• Music Note: Acoustic settings.\n• Smartphone: Toggles system push notifications.",
+    help_header_desc: "• Globe: Changes system language.\n• Terminal: Opens Debug Logs.\n• Eye: Prevents screen from sleeping and keeps app running in background.\n• Volume: System audio toggle.\n• Music Note: Acoustic settings.\n• Smartphone: Toggles system push notifications.",
     help_time_title: "Strategic Time Module",
     help_time_desc: "• End Time: Displays global target time.\n• Early Warnings: Select preset alerts (15M, 10M, 5M) before the global End Time.\n• H/M Inputs: Manually set global target time.",
     help_creation_title: "Deployment Module",
@@ -143,7 +143,7 @@ const dict = {
     typeRelaxing: "Relajante",
     typeSilent: "Silencio",
     help_header_title: "Panel de Control Global",
-    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Evita que la pantalla se apague. Al activarlo, engaña al sistema reproduciendo audio silencioso para que la app no se congele en segundo plano.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones push en barra.",
+    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Evita que la pantalla se apague y mantiene el sistema operando con precisión en segundo plano.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones push en barra.",
     help_time_title: "Módulo de Tiempo Estratégico",
     help_time_desc: "• Hora Fin: Establece el límite global.\n• Avisos Tempranos: Calcula alertas (15M, 10M, 5M) antes de la Hora Fin.\n• Entradas H/M: Define tu objetivo manual.",
     help_creation_title: "Módulo de Despliegue",
@@ -204,12 +204,11 @@ const COLORS = [
 const App = () => {
   const appId = 'war-control-pro';
   const [lang, setLang] = useState('es');
+  
   const t = useCallback((key) => dict[lang][key] || key, [lang]);
+
   const [activeHelp, setActiveHelp] = useState(null);
   
-  // ==========================================
-  // SISTEMA DE LOGS (TERMINAL TÁCTICA)
-  // ==========================================
   const [actionLog, setActionLog] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
 
@@ -280,6 +279,7 @@ const App = () => {
   
   const [wakeLockActive, setWakeLockActive] = useState(false);
   const wakeLockRef = useRef(null);
+  const audioHackRef = useRef(null);
 
   const tasksRef = useRef([]);
   const targetEndTimeRef = useRef(null);
@@ -319,46 +319,56 @@ const App = () => {
   };
 
   // ==========================================
-  // WAKELOCK Y AUDIO SILENCIOSO INTEGRADOS
+  // WAKELOCK Y AUDIO SILENCIOSO INTEGRADOS (En Memoria RAM)
   // ==========================================
   const toggleWakeLock = async () => {
-    const audioEl = document.getElementById('silent-audio-hack');
+    // Fabricamos el audio dinámicamente para evadir escudos de navegadores (Fingerprinting blockers)
+    if (!audioHackRef.current) {
+        const silenceBase64 = "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vwAAABMYXZjNTkuMzcuMTAwAAAAAAAAAAAAAAAAJAAAAAAAAAAAScCAgP/zhAAAAAAAAAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+        const byteCharacters = atob(silenceBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {type: 'audio/mpeg'});
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.loop = true;
+        audio.playsInline = true;
+        audioHackRef.current = audio;
+    }
     
     if (wakeLockActive) {
-      // APAGANDO MODO VIGÍA
       if (wakeLockRef.current) {
         try { await wakeLockRef.current.release(); } catch(e){}
         wakeLockRef.current = null;
       }
       setWakeLockActive(false);
-      if (audioEl) audioEl.pause();
-      addLog("Modo Vigía y Audio de Fondo DESACTIVADOS.", "warning");
+      audioHackRef.current.pause();
+      addLog("Modo Vigía DESACTIVADO.", "warning");
       return;
     }
 
-    // ENCENDIENDO MODO VIGÍA
-    if (audioEl) {
-        audioEl.play().catch(e => addLog("El navegador bloqueó el audio silencioso.", "error"));
-    }
+    audioHackRef.current.play().catch(e => addLog("Navegador bloqueó audio de fondo.", "error"));
 
     if (!('wakeLock' in navigator)) {
-      setWakeLockActive(true); // Lo dejamos activo visualmente porque el audio de fondo sí funciona
-      addLog("Modo Vigía: Solo Audio de fondo activado (WakeLock API no soportada).", "warning");
+      setWakeLockActive(true); 
+      addLog("Modo Vigía: Operando solo en Fondo (API WakeLock no soportada).", "warning");
       return;
     }
 
     try {
       wakeLockRef.current = await navigator.wakeLock.request('screen');
       setWakeLockActive(true);
-      addLog("Modo Vigía Completo ACTIVADO (Audio + Pantalla).", "success");
+      addLog("Modo Vigía ACTIVADO (Pantalla y Fondo activos).", "success");
       
       wakeLockRef.current.addEventListener('release', () => { 
-          // Si se suelta (por minimizarse), el audio silencioso seguirá funcionando en segundo plano
-          addLog("La pantalla perdió el bloqueo, confiando en audio de fondo.", "warning");
+          addLog("Pantalla liberada, operando en modo Fondo.", "warning");
       });
     } catch (err) {
       setWakeLockActive(true);
-      addLog(`WakeLock falló, operando en modo Audio de Fondo.`, "warning");
+      addLog(`Modo Vigía operando en Modo Fondo.`, "warning");
     }
   };
 
@@ -611,7 +621,7 @@ const App = () => {
                   setUser(currentUser);
               }); 
           } catch(e) {
-              addLog(`Fallo de Autenticación Firebase: ${e.message}`, "error");
+              addLog(`Fallo de Autenticación de Servidor: ${e.message}`, "error");
           }
       }
     };
@@ -737,6 +747,7 @@ const App = () => {
                       if (a.on && !a.trig) {
                           let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
                           let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
+                          
                           const limitSecs = Math.floor(limitMs / 1000);
                           
                           if (limitSecs > 0 && visualSecsRem <= limitSecs && visualSecsRem >= 0) {
@@ -1202,7 +1213,7 @@ const App = () => {
   const currentAlertConf = activeAlert ? (alertConfig[activeAlert.type] || alertConfig.task) : alertConfig.task;
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 p-4 pb-32 overflow-x-hidden font-sans" style={{ WebkitTapHighlightColor: 'transparent' }}>
+    <div className="min-h-[100dvh] bg-black text-zinc-100 p-4 pb-32 overflow-x-hidden font-sans" style={{ WebkitTapHighlightColor: 'transparent' }}>
       <style>{`
         @keyframes tremble { 0% { transform: rotate(1.5deg) scale(1.05); } 50% { transform: rotate(-1.5deg) scale(1.05); } 100% { transform: rotate(1.5deg) scale(1.05); } }
         .is-ghost { animation: tremble 0.12s infinite !important; }
@@ -1253,10 +1264,6 @@ const App = () => {
           </div>
         </div>
       )}
-
-      <audio id="silent-audio-hack" loop playsInline style={{display: 'none'}}>
-          <source src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vwAAABMYXZjNTkuMzcuMTAwAAAAAAAAAAAAAAAAJAAAAAAAAAAAScCAgP/zhAAAAAAAAAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV" type="audio/mpeg" />
-      </audio>
 
       {dragState.isDragging && (
           <div className="fixed z-[9999] pointer-events-none is-ghost shadow-[0_20px_50px_rgba(245,158,11,0.5)] border-2 border-amber-500 rounded-xl bg-zinc-900/95 px-4 py-3 backdrop-blur" style={{ left: dragState.pos.x - 70, top: dragState.pos.y - 30 }}>
@@ -1488,7 +1495,7 @@ const App = () => {
 
                                 {editingBoxId === box.id ? (
                                     <div className="flex-1 flex flex-col p-3 bg-zinc-900/90 w-full animate-in fade-in">
-                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full ${newBoxColor === c.hex ? 'border-2 border-white scale-110 shadow-lg' : 'opacity-40'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white shadow-md"><Check size={14}/></button></div></div>
+                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full border-2 ${newBoxColor === c.hex ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white shadow-md"><Check size={14}/></button></div></div>
                                         <div className="flex items-center justify-between px-1 py-2 border-t border-zinc-800/80"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest flex items-center gap-1.5"><Plus size={10}/> {t('addCrono')}</span><div className="flex gap-1.5"><button onClick={() => handleEditBoxDraftCount(false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 shadow-sm"><Minus size={12}/></button><button onClick={() => handleEditBoxDraftCount(true)} className="p-1.5 bg-blue-600/20 text-blue-400 rounded-lg shadow-sm"><Plus size={12}/></button></div></div>
                                         <div className="space-y-1.5 mt-1">
                                             {editBoxDrafts.map((draft, i) => (
