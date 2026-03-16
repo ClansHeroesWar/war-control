@@ -206,7 +206,6 @@ const parseSafeDate = (val) => {
     if (!val) return null;
     try {
         if (typeof val === 'object' && val.seconds) return new Date(val.seconds * 1000);
-        if (typeof val === 'number') return new Date(val); // Added protection for raw numbers
         const d = new Date(val);
         return isNaN(d.getTime()) ? null : d;
     } catch (e) {
@@ -220,9 +219,6 @@ const App = () => {
   const t = useCallback((key) => dict[lang][key] || key, [lang]);
   const [activeHelp, setActiveHelp] = useState(null);
   
-  // ==========================================
-  // SISTEMA DE LOGS (TERMINAL TÁCTICA)
-  // ==========================================
   const [actionLog, setActionLog] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
 
@@ -331,9 +327,6 @@ const App = () => {
       addLog(`Idioma cambiado a ${nextLang.toUpperCase()}`, 'info');
   };
 
-  // ==========================================
-  // WAKELOCK Y AUDIO SILENCIOSO INTEGRADOS
-  // ==========================================
   const toggleWakeLock = async () => {
     const audioEl = document.getElementById('silent-audio-hack');
     
@@ -492,14 +485,14 @@ const App = () => {
           addLog("Perfil de audio configurado a: Silenciado", "info");
           return;
       }
-      addLog(`Reproduciendo muestra de audio: ${profile}`, "info");
+      addLog(`Reproduciendo muestra: ${profile}`, "info");
       previewEngineRef.current = synthesizeAudio(profile, true);
   }, [stopInfiniteAlarm, synthesizeAudio, addLog]);
 
   const triggerInfiniteAlarm = useCallback((type) => {
       stopInfiniteAlarm();
       const profile = type === 'war' ? warSoundRef.current : taskSoundRef.current;
-      addLog(`Disparando alarma táctica infinita [Tipo: ${type}]. Audio: ${profile}`, "warning");
+      addLog(`Disparando alarma táctica [Tipo: ${type}]. Audio: ${profile}`, "warning");
       
       if (vibrateOnRef.current && navigator.vibrate) {
           triggerHaptic([500, 200, 500, 200]);
@@ -519,12 +512,12 @@ const App = () => {
       if (sysNotifOn) {
           setSysNotifOn(false);
           if (syncRef.current) syncRef.current({ sysNotifOn: false });
-          addLog("Notificaciones en barra DESACTIVADAS manualmente.", "warning");
+          addLog("Notificaciones en barra DESACTIVADAS.", "warning");
           return;
       }
 
       if (typeof Notification === 'undefined') {
-          addLog("API Notification no soportada en este entorno.", "error");
+          addLog("API Notification no soportada.", "error");
           return;
       }
 
@@ -533,7 +526,7 @@ const App = () => {
           if (status === 'granted') {
               setSysNotifOn(true);
               if (syncRef.current) syncRef.current({ sysNotifOn: true });
-              addLog("Permiso de notificación CONCEDIDO. Alertas activadas.", "success");
+              addLog("Permiso CONCEDIDO. Alertas activadas.", "success");
               
               if (messagingInstance && user) {
                   try {
@@ -541,17 +534,16 @@ const App = () => {
                       if (currentToken) {
                           setPushToken(currentToken);
                           if (syncRef.current) syncRef.current({ fcmToken: currentToken });
-                          addLog("Módulo Push FCM enlazado en segundo plano.", "success");
                       }
                   } catch (e) {
-                      addLog(`Advertencia: Fallo Token FCM (${e.message}). Las notificaciones locales seguirán operando.`, "warning");
+                      addLog(`Aviso: Fallo Token FCM. Locales seguirán operando.`, "warning");
                   }
               }
           } else {
-              addLog("Permiso de notificación DENEGADO por el usuario o navegador.", "error");
+              addLog("Permiso de notificación DENEGADO.", "error");
           }
       } catch (err) {
-          addLog(`Fallo al solicitar permisos: ${err.message}`, "error");
+          addLog(`Fallo permisos: ${err.message}`, "error");
       }
   };
 
@@ -566,8 +558,6 @@ const App = () => {
               if (regs.length > 0) {
                   await regs[0].showNotification(String(title), {
                       body: String(body),
-                      icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
-                      badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
                       vibrate: [500, 200, 500, 200, 500],
                       requireInteraction: true 
                   });
@@ -576,7 +566,7 @@ const App = () => {
           }
           new Notification(String(title), { body: String(body), requireInteraction: true });
       } catch (e) {
-          addLog(`Fallo al inyectar alerta en la barra: ${e.message}`, "error");
+          addLog(`Fallo al inyectar alerta: ${e.message}`, "error");
       }
   }, [sysNotifOn, addLog]);
 
@@ -606,12 +596,10 @@ const App = () => {
                     alerted: t.alerted || false
                   })));
                 }
-            } catch(e) {
-                addLog("Error recuperando caché local", "error");
-            }
+            } catch(e) {}
         }
         setIsLoaded(true);
-        addLog("SISTEMA INICIADO EN MODO LOCAL (OFFLINE)", "warning");
+        addLog("SISTEMA INICIADO OFFLINE", "warning");
         return;
     }
 
@@ -623,7 +611,7 @@ const App = () => {
                   setUser(currentUser);
               }); 
           } catch(e) {
-              addLog(`Fallo de Autenticación Firebase: ${e.message}`, "error");
+              addLog(`Fallo Auth: ${e.message}`, "error");
           }
       }
     };
@@ -635,35 +623,31 @@ const App = () => {
     const docRef = doc(dbInstance, 'artifacts', appId, 'users', user.uid, 'settings', 'global_data_v45');
     const unsub = onSnapshot(docRef, (snap) => {
       if (snap.exists() && !isDraggingRef.current) { 
-        try {
-            const data = snap.data();
-            if (data.targetEndTime) setTargetEndTime(parseSafeDate(data.targetEndTime));
-            if (data.warAlarms) setWarAlarms(data.warAlarms);
-            if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
-            if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
-            if (data.warSound) setWarSound(data.warSound);
-            if (data.taskSound) setTaskSound(data.taskSound);
-            if (data.sysNotifOn !== undefined) setSysNotifOn(data.sysNotifOn);
-            if (data.boxes) setBoxes(data.boxes);
-            if (data.rootOrder) setRootOrder(data.rootOrder);
-            if (data.language) setLang(data.language);
-            if (data.tasks) {
-              const now = Date.now();
-              setTasks(data.tasks.map(t => ({
-                ...t, 
-                remainingSeconds: t.isRunning && t.serverEndTime ? Math.max(0, Math.floor((t.serverEndTime - now) / 1000)) : t.remainingSeconds,
-                isNewFinish: t.isNewFinish || false,
-                alerted: t.alerted || false
-              })));
-            }
-        } catch (e) {
-            addLog("Error crítico de decodificación Firebase", "error");
+        const data = snap.data();
+        if (data.targetEndTime) setTargetEndTime(parseSafeDate(data.targetEndTime));
+        if (data.warAlarms) setWarAlarms(data.warAlarms);
+        if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
+        if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
+        if (data.warSound) setWarSound(data.warSound);
+        if (data.taskSound) setTaskSound(data.taskSound);
+        if (data.sysNotifOn !== undefined) setSysNotifOn(data.sysNotifOn);
+        if (data.boxes) setBoxes(data.boxes);
+        if (data.rootOrder) setRootOrder(data.rootOrder);
+        if (data.language) setLang(data.language);
+        if (data.tasks) {
+          const now = Date.now();
+          setTasks(data.tasks.map(t => ({
+            ...t, 
+            remainingSeconds: t.isRunning && t.serverEndTime ? Math.max(0, Math.floor((t.serverEndTime - now) / 1000)) : t.remainingSeconds,
+            isNewFinish: t.isNewFinish || false,
+            alerted: t.alerted || false
+          })));
         }
       }
       setIsLoaded(true);
     });
     return () => unsub();
-  }, [user, addLog]);
+  }, [user]);
 
   const sync = async (updates) => {
     if (isOfflineMode) {
@@ -695,7 +679,7 @@ const App = () => {
   }, [activeAlert, alertQueue, stopInfiniteAlarm]);
 
   // ==========================================
-  // TICKER UNIFICADO BLINDADO
+  // TICKER UNIFICADO (ALTA PRECISIÓN: 250ms)
   // ==========================================
   useEffect(() => {
       const ticker = setInterval(() => {
@@ -708,7 +692,6 @@ const App = () => {
           let hasNewFinishedTasks = false;
           let finishedLabels = [];
 
-          // VERIFICACIÓN DE CRONÓMETROS (TAREAS)
           const nextTasks = tasksRef.current.map(t => {
             if (t.isRunning && t.serverEndTime) {
               const exactRemaining = Math.max(0, Math.floor((t.serverEndTime - now) / 1000));
@@ -729,48 +712,37 @@ const App = () => {
             return t;
           });
 
-          // VERIFICACIÓN DE GUERRA GLOBAL Y AVISOS TEMPRANOS
           let newlyTriggeredAlarms = [];
           let nextAlarms = [...warAlarmsRef.current];
           let warEndedNow = false;
           
-          if (targetEndTimeRef.current) {
-            try {
-              const targetTimeMs = targetEndTimeRef.current.getTime();
-              if (!isNaN(targetTimeMs)) {
-                  const msRem = targetTimeMs - now;
-                  const visualSecsRem = Math.floor(msRem / 1000);
+          if (targetEndTimeRef.current && !isNaN(targetEndTimeRef.current.getTime())) {
+              const msRem = targetEndTimeRef.current.getTime() - now;
+              const visualSecsRem = Math.floor(msRem / 1000);
 
-                  // 1. Detección de Fin de Guerra Exacto (0s)
-                  if (visualSecsRem === 0 && !globalWarAlertedRef.current) {
-                      globalWarAlertedRef.current = true;
-                      warEndedNow = true;
-                      addLog(`LA GUERRA HA FINALIZADO.`, 'warning');
-                  } else if (visualSecsRem > 0) {
-                      globalWarAlertedRef.current = false;
-                  }
-
-                  // 2. Detección de Avisos Tempranos
-                  if (msRem < 86400000 && msRem > -86400000) { 
-                      warAlarmsRef.current.forEach(a => {
-                          if (a.on && !a.trig) {
-                              let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
-                              let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
-                              const limitSecs = Math.floor(limitMs / 1000);
-                              
-                              if (limitSecs > 0 && visualSecsRem <= limitSecs && visualSecsRem >= 0) {
-                                  newlyTriggeredAlarms.push(a);
-                              }
-                          }
-                      });
-                  }
+              if (visualSecsRem === 0 && !globalWarAlertedRef.current) {
+                  globalWarAlertedRef.current = true;
+                  warEndedNow = true;
+                  addLog(`LA GUERRA HA FINALIZADO.`, 'warning');
+              } else if (visualSecsRem > 0) {
+                  globalWarAlertedRef.current = false;
               }
-            } catch(e) {
-                addLog("Error en matemática de tiempo principal", "error");
-            }
+
+              if (msRem < 86400000 && msRem > -86400000) { 
+                  warAlarmsRef.current.forEach(a => {
+                      if (a.on && !a.trig) {
+                          let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
+                          let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
+                          const limitSecs = Math.floor(limitMs / 1000);
+                          
+                          if (limitSecs > 0 && visualSecsRem <= limitSecs && visualSecsRem >= 0) {
+                              newlyTriggeredAlarms.push(a);
+                          }
+                      }
+                  });
+              }
           }
 
-          // CONSTRUCCIÓN DE ALERTAS VISCERALES
           if (finishedLabels.length > 0) {
               setAlertQueue(prev => [...prev, { 
                   title: t('taskFinished'), 
@@ -842,10 +814,7 @@ const App = () => {
 
   const toggleAlarm = (id) => {
       const now = Date.now();
-      let msRem = 0;
-      if (targetEndTimeRef.current && !isNaN(targetEndTimeRef.current.getTime())) {
-          msRem = targetEndTimeRef.current.getTime() - now;
-      }
+      const msRem = (targetEndTimeRef.current && !isNaN(targetEndTimeRef.current.getTime())) ? targetEndTimeRef.current.getTime() - now : 0;
       
       const next = warAlarms.map(a => {
           if (a.id === id) {
@@ -1213,7 +1182,7 @@ const App = () => {
                 {t.isNewFinish && ( <button onClick={(e) => { e.stopPropagation(); dismissNewFinish(t.id); }} className="p-1 px-2.5 bg-amber-600 text-white rounded-lg font-black text-[9px] uppercase flex items-center gap-1 animate-pulse mr-1 shadow-[0_0_10px_rgba(245,158,11,0.5)]"><RolledScrollIcon size={12}/> Visto</button> )}
                 <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${t.isNewFinish ? 'text-amber-300' : 'text-zinc-700'}`}><RotateCcw size={16} /></button>
                 <button onClick={() => { const hVal = Math.floor(t.initialSeconds / 3600); const mVal = Math.floor((t.initialSeconds % 3600) / 60); const sVal = t.initialSeconds % 60; setEditBuf({ label: t.label, h: hVal > 0 ? String(hVal) : '', m: mVal > 0 ? String(mVal) : '', s: sVal > 0 ? String(sVal) : '' }); setEditingId(t.id); }} className={`p-1.5 ${t.isNewFinish ? 'text-amber-400' : 'text-zinc-700'}`}><Edit2 size={16} /></button>
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-amber-300' : 'text-zinc-600')}`}><Pause size={18} className={t.isRunning && t.remainingSeconds > 0 ? 'block' : 'hidden'}/><Play size={18} className={!t.isRunning && t.remainingSeconds > 0 ? 'block' : 'hidden'} /></button>
+                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-amber-300' : 'text-zinc-600')}`}>{t.isRunning && t.remainingSeconds > 0 ? <Pause size={18} /> : <Play size={18} />}</button>
                 <button onClick={async () => { const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); }} className={`p-1.5 ${t.isNewFinish ? 'text-amber-500' : 'text-zinc-800'}`}><Trash2 size={16} /></button>
               </>
             )}
