@@ -12,6 +12,40 @@ import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getMessaging, getToken } from 'firebase/messaging';
 
 // ==========================================
+// ICONOS SVG FORJADOS A MEDIDA (Vectores Puros)
+// ==========================================
+const HornIcon = ({ size = 24, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M19 4q-4 3-4 10a8 8 0 0 1-10 6 3 3 0 0 0 5-5q4-8 9-11Z" />
+    <path d="M16 3l3 3" />
+    <path d="M11 20l3 3" />
+  </svg>
+);
+
+const RolledScrollIcon = ({ size = 24, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M8 4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2Z" />
+    <path d="M8 4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2" />
+    <path d="M4 6a2 2 0 0 1 2-2" />
+    <path d="M4 20a2 2 0 0 0 2 2" />
+  </svg>
+);
+
+const CrownScrollIcon = ({ size = 24, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M8 9a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2Z" />
+    <path d="M8 9a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2" />
+    <path d="M11 7l1-4 2 2 2-2 2 2 1-4 1 4v3" />
+  </svg>
+);
+
+const VibrateIcon = ({ size = 24, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="m2 8 2 2-2 2 2 2-2 2" /><path d="m22 8-2 2 2 2-2 2 2 2" /><rect width="8" height="14" x="8" y="5" rx="1" />
+  </svg>
+);
+
+// ==========================================
 // DICCIONARIO DE IDIOMAS Y AYUDAS
 // ==========================================
 const dict = {
@@ -37,6 +71,8 @@ const dict = {
     moving: "Moving",
     soundConfig: "Acoustic Config",
     taskFinished: "Plan Completed",
+    warEndedTitle: "War Status",
+    clanMessages: "Clan Messages",
     confirmResetTitle: "Confirm Reset",
     confirmResetDesc: "Reset all timers in section",
     cancel: "Cancel",
@@ -48,7 +84,6 @@ const dict = {
     soundAlert: "Standard Alert",
     soundDigital: "Digital Beep",
     soundSonar: "Submarine Sonar",
-    soundPulse: "Heart Pulse",
     soundChime: "Zen Chime",
     soundCrystal: "Crystal Echo",
     soundZen: "Harmonic Wave",
@@ -68,7 +103,7 @@ const dict = {
     appTitle: "War Control",
     realTime: "Tiempo Real Operativo",
     endTime: "Hora Fin",
-    earlyWarnings: "Avisos Tempranos",
+    earlyWarnings: "Avisos Tempranos de Guerra",
     sync: "SINCRONIZAR",
     addCrono: "Añadir Crono",
     addSection: "Crear Sección",
@@ -85,7 +120,9 @@ const dict = {
     dropToExtract: "Soltar para Extraer",
     moving: "Moviendo",
     soundConfig: "Config. Acústica",
-    taskFinished: "Plan Finalizado",
+    taskFinished: "Planes Finalizados",
+    warEndedTitle: "Estado de la Guerra",
+    clanMessages: "Mensajes de Clan",
     confirmResetTitle: "Confirmar Reinicio",
     confirmResetDesc: "Reinciar todos los cronos de la sección",
     cancel: "Cancelar",
@@ -97,7 +134,6 @@ const dict = {
     soundAlert: "Alerta Estándar",
     soundDigital: "Bip Digital",
     soundSonar: "Sonar Submarino",
-    soundPulse: "Pulso Cardíaco",
     soundChime: "Campana Zen",
     soundCrystal: "Cristal Eco",
     soundZen: "Onda Armónica",
@@ -107,11 +143,11 @@ const dict = {
     typeRelaxing: "Relajante",
     typeSilent: "Silencio",
     help_header_title: "Panel de Control Global",
-    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Evita que la pantalla se apague.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones de barra.",
+    help_header_desc: "• Globo: Cambia el idioma.\n• Terminal: Abre el registro de eventos (Log).\n• Ojo (Vigía): Evita que la pantalla se apague.\n• Volumen: Silencia el audio general.\n• Nota Musical: Configuración de sonidos.\n• Teléfono: Activa/Desactiva notificaciones push en barra.",
     help_time_title: "Módulo de Tiempo Estratégico",
     help_time_desc: "• Hora Fin: Establece el límite global.\n• Avisos Tempranos: Calcula alertas (15M, 10M, 5M) antes de la Hora Fin.\n• Entradas H/M: Define tu objetivo manual.",
     help_creation_title: "Módulo de Despliegue",
-    help_creation_desc: "• Añadir Crono: Inyecta cronómetros al campo.\n• Crear Sección: Construye contenedores visuales.\nNota: Arrastra cronos usando el icono de puntos."
+    help_creation_desc: "• Añadir Crono: Inyecta cronómetros al campo.\n• Crear Sección: Construye contenedores visuales para agrupar cronómetros.\nNota: Arrastra cronos libremente usando el icono de puntos."
   }
 };
 
@@ -156,12 +192,6 @@ const initGlobalAudio = () => {
     }
 };
 
-const VibrateIcon = ({ size = 24, className = "" }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <path d="m2 8 2 2-2 2 2 2-2 2" /><path d="m22 8-2 2 2 2-2 2 2 2" /><rect width="8" height="14" x="8" y="5" rx="1" />
-  </svg>
-);
-
 const COLORS = [
   { name: 'Naranja', hex: '#f59e0b' },
   { name: 'Rojo', hex: '#ef4444' },
@@ -196,7 +226,6 @@ const App = () => {
     { id: 'alert', name: t('soundAlert'), type: t('typeUrgent') },
     { id: 'digital', name: t('soundDigital'), type: t('typeUrgent') },
     { id: 'sonar', name: t('soundSonar'), type: t('typeCalm') },
-    { id: 'pulse', name: t('soundPulse'), type: t('typeCalm') },
     { id: 'chime', name: t('soundChime'), type: t('typeRelaxing') },
     { id: 'crystal', name: t('soundCrystal'), type: t('typeRelaxing') },
     { id: 'zen', name: t('soundZen'), type: t('typeRelaxing') },
@@ -264,6 +293,7 @@ const App = () => {
   const activeVibrationIntervalRef = useRef(null); 
   const previewEngineRef = useRef(null);
   const syncRef = useRef(null); 
+  const globalWarAlertedRef = useRef(false);
   
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
   useEffect(() => { targetEndTimeRef.current = targetEndTime; }, [targetEndTime]);
@@ -401,7 +431,6 @@ const App = () => {
                   case 'alert': scheduleNote('sawtooth', 800, 0, 0.4, 0.01, 0.1); scheduleNote('sawtooth', 800, 0.15, 0.4, 0.01, 0.1); scheduleNote('sawtooth', 800, 0.3, 0.4, 0.01, 0.1); break;
                   case 'digital': scheduleNote('square', 1200, 0, 0.2, 0.01, 0.1); scheduleNote('square', 1600, 0.1, 0.2, 0.01, 0.1); break;
                   case 'sonar': scheduleNote('sine', 1200, 0, 0.6, 0.01, 1.0); break;
-                  case 'pulse': scheduleNote('sine', 150, 0, 0.8, 0.1, 0.4); scheduleNote('sine', 150, 0.5, 0.6, 0.1, 0.4); break;
                   case 'chime': scheduleNote('sine', 600, 0, 0.5, 0.05, 2.0); scheduleNote('sine', 900, 0, 0.2, 0.05, 2.0); break;
                   case 'crystal': scheduleNote('triangle', 2000, 0, 0.3, 0.01, 0.5); scheduleNote('triangle', 2500, 0.2, 0.2, 0.01, 0.5); break;
                   case 'zen': scheduleNote('sine', 432, 0, 0.4, 1.0, 2.0); scheduleNote('sine', 540, 0.5, 0.3, 1.0, 2.0); break;
@@ -494,7 +523,7 @@ const App = () => {
                   }
               }
           } else {
-              addLog("Permiso de notificaciones DENEGADO por el usuario o sistema operativo.", "error");
+              addLog("Permiso de notificación DENEGADO por el usuario o sistema operativo.", "error");
           }
       } catch (err) {
           addLog(`Error crítico al solicitar notificaciones: ${err.message}`, "error");
@@ -512,17 +541,13 @@ const App = () => {
               if (regs.length > 0) {
                   await regs[0].showNotification(String(title), {
                       body: String(body),
-                      icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
-                      badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
                       vibrate: [500, 200, 500, 200, 500],
                       requireInteraction: true 
                   });
-                  addLog(`Alerta anclada a la barra mediante ServiceWorker: ${title}`, 'success');
                   return;
               }
           }
           new Notification(String(title), { body: String(body), requireInteraction: true });
-          addLog(`Alerta enviada mediante API Nativa (Fallback): ${title}`, 'success');
       } catch (e) {
           addLog(`Fallo al inyectar alerta en la barra: ${e.message}`, "error");
       }
@@ -639,7 +664,6 @@ const App = () => {
 
   // ==========================================
   // TICKER UNIFICADO (ALTA PRECISIÓN: 250ms)
-  // Sincronía visual milimétrica sin desfases
   // ==========================================
   useEffect(() => {
       const ticker = setInterval(() => {
@@ -652,6 +676,7 @@ const App = () => {
           let hasNewFinishedTasks = false;
           let finishedLabels = [];
 
+          // VERIFICACIÓN DE CRONÓMETROS (TAREAS)
           const nextTasks = tasksRef.current.map(t => {
             if (t.isRunning && t.serverEndTime) {
               const exactRemaining = Math.max(0, Math.floor((t.serverEndTime - now) / 1000));
@@ -672,22 +697,32 @@ const App = () => {
             return t;
           });
 
+          // VERIFICACIÓN DE GUERRA GLOBAL Y AVISOS TEMPRANOS
           let newlyTriggeredAlarms = [];
           let nextAlarms = [...warAlarmsRef.current];
+          let warEndedNow = false;
           
           if (targetEndTimeRef.current) {
               const msRem = targetEndTimeRef.current.getTime() - now;
+              const visualSecsRem = Math.floor(msRem / 1000);
+
+              // 1. Detección de Fin de Guerra Exacto (0s)
+              if (visualSecsRem === 0 && !globalWarAlertedRef.current) {
+                  globalWarAlertedRef.current = true;
+                  warEndedNow = true;
+                  addLog(`LA GUERRA HA FINALIZADO.`, 'warning');
+              } else if (visualSecsRem > 0) {
+                  globalWarAlertedRef.current = false; // Se rearma si el tiempo global cambia al futuro
+              }
+
+              // 2. Detección de Avisos Tempranos
               if (msRem < 86400000 && msRem > -86400000) { 
                   warAlarmsRef.current.forEach(a => {
                       if (a.on && !a.trig) {
                           let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
                           let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
-                          
-                          // LECTURA VISUAL: Extrae el segundo exacto que ve el usuario en pantalla (Math.floor/1000)
-                          const visualSecsRem = Math.floor(msRem / 1000);
                           const limitSecs = Math.floor(limitMs / 1000);
                           
-                          // Detona en el instante exacto en que la UI renderiza el segundo objetivo
                           if (limitSecs > 0 && visualSecsRem <= limitSecs && visualSecsRem >= 0) {
                               newlyTriggeredAlarms.push(a);
                           }
@@ -696,32 +731,44 @@ const App = () => {
               }
           }
 
-          if (finishedLabels.length > 0 || newlyTriggeredAlarms.length > 0) {
-              let alertTitle = ""; let notifBody = "";
+          // CONSTRUCCIÓN DE ALERTAS VISCERALES
+          if (finishedLabels.length > 0) {
+              setAlertQueue(prev => [...prev, { 
+                  title: t('taskFinished'), 
+                  body: finishedLabels.map(l => `• ${l}`).join('\n'), 
+                  type: 'task' 
+              }]);
+          }
 
-              if (finishedLabels.length > 0) {
-                  alertTitle = t('taskFinished');
-                  notifBody = finishedLabels.map(l => `• ${l}`).join('\n');
+          if (newlyTriggeredAlarms.length > 0 || warEndedNow) {
+              let alertTitle = t('warEndedTitle');
+              let notifBody = "";
+
+              if (warEndedNow) {
+                  const endMessages = ["Guerra finalizada.", "Fin de la guerra.", "La guerra finalizó."];
+                  const randomEnd = endMessages[Math.floor(Math.random() * endMessages.length)];
+                  notifBody += `${randomEnd}\n\n`;
               }
 
               if (newlyTriggeredAlarms.length > 0) {
-                  const alarmLabels = newlyTriggeredAlarms.map(a => a.custom ? `Faltan ${a.h ? a.h+'h ' : ''}${a.m ? a.m+'m ' : ''}${a.s ? a.s+'s' : ''}`.trim() : `Faltan ${a.mins} Minutos`).join('\n• ');
-                  if (notifBody) { notifBody += `\n\n${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
-                  else { alertTitle = t('earlyWarnings'); notifBody = `• ${alarmLabels}`; }
-
+                  const alarmLabels = newlyTriggeredAlarms.map(a => {
+                      let timeStr = a.custom ? `${a.h ? a.h+'h ' : ''}${a.m ? a.m+'m ' : ''}${a.s ? a.s+'s' : ''}`.trim() : `${a.mins} Minutos`;
+                      return `La guerra finaliza en ${timeStr}`;
+                  }).join('\n• ');
+                  
+                  notifBody += `${alarmLabels}`;
                   nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
-                  setWarAlarms(nextAlarms); if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
-                  addLog(`Disparando Aviso Temprano de Sistema.`, 'warning');
+                  setWarAlarms(nextAlarms); 
+                  if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
               }
               
-              const alertType = newlyTriggeredAlarms.length > 0 && finishedLabels.length === 0 ? 'war' : 'task';
-              setAlertQueue(prev => [...prev, { title: alertTitle, body: notifBody, type: alertType }]);
+              setAlertQueue(prev => [...prev, { title: alertTitle, body: notifBody.trim(), type: 'war' }]);
           }
 
           if (changedTasks) setTasks(nextTasks);
           if (hasNewFinishedTasks && syncRef.current) syncRef.current({ tasks: nextTasks });
 
-      }, 250); // Scanner a 250ms garantiza latencia nula contra el renderizado de pantalla
+      }, 250); 
 
       return () => clearInterval(ticker);
   }, [t, addLog]);
@@ -738,23 +785,18 @@ const App = () => {
     const end = new Date(Date.now() + (h * 3600000) + (m * 60000));
     setTargetEndTime(end);
     
-    // COMPUERTA LÓGICA DE SINCRONIZACIÓN
-    // Respeta las alarmas encendidas. Solo rearma (trig:false) las que tienen tiempo válido.
     const msRem = end.getTime() - Date.now();
     const rA = warAlarms.map(a => {
         let limitMs = a.custom ? (((parseInt(a.h)||0)*3600) + ((parseInt(a.m)||0)*60) + (parseInt(a.s)||0))*1000 : a.mins*60000;
         
         if (a.on && msRem <= limitMs) {
-            // El nuevo tiempo inyectado invalida esta alarma (el tiempo ya pasó). Se queda encendida pero ignorada.
             return { ...a, trig: true }; 
         }
-        // La alarma es válida, se rearma para disparar.
         return { ...a, trig: false }; 
     });
     
     setWarAlarms(rA);
     if(syncRef.current) syncRef.current({ targetEndTime: end.getTime(), warAlarms: rA });
-    addLog(`Hora Global sincronizada a las ${end.toLocaleTimeString()}`, 'success');
   };
 
   const toggleAlarm = (id) => {
@@ -768,12 +810,8 @@ const App = () => {
               
               let newTrig = a.trig;
               if (isTurningOn) {
-                  // Si intentas encender una alarma que ya venció respecto al tiempo global actual,
-                  // se enciende visualmente pero se marca internamente como detonada (trig:true)
-                  // para no lanzarte la alerta roja en la cara. Quedará lista para el siguiente "Sincronizar".
                   if (targetEndTimeRef.current && msRem <= limitMs) {
                       newTrig = true; 
-                      addLog(`Alarma armada tarde. Quedará en espera de nueva Sincronización.`, 'info');
                   } else {
                       newTrig = false; 
                   }
@@ -819,7 +857,6 @@ const App = () => {
         const label = (draft.label.trim() || `PLAN ${startingIndex + index}`).toUpperCase();
         nlTasks.push({ id: baseTime + index, label, initialSeconds: total, remainingSeconds: total, serverEndTime: baseTime + (total * 1000), isRunning: true, boxId: null, isNewFinish: false, alerted: false });
         nlRootOrder.push({ id: baseTime + index, type: 'task' });
-        addLog(`Crono inyectado: ${label} (${total}s)`, 'success');
     });
     setTasks(nlTasks); setRootOrder(nlRootOrder);
     if(syncRef.current) syncRef.current({ tasks: nlTasks, rootOrder: nlRootOrder });
@@ -831,8 +868,6 @@ const App = () => {
     const newBox = { id: boxId, name: (newBoxLabel.trim() || `SECTION ${boxes.length + 1}`).toUpperCase(), color: newBoxColor, isCollapsed: false };
     let nlBoxes = [...boxes, newBox], nlTasks = [...tasks], nlRootOrder = [...rootOrder, {id: boxId, type: 'box'}];
     const baseTime = Date.now(), startingIndex = tasks.length + 1;
-
-    addLog(`Caja creada: ${newBox.name}`, 'success');
 
     if (includeInitialCrono) {
         boxCronoDrafts.forEach((draft, index) => {
@@ -1090,7 +1125,8 @@ const App = () => {
   const renderTask = (t, isInside, targetBoxId = null) => {
     const isTarget = dropIndicator?.id === t.id && dropIndicator?.type === 'task';
     const isThisDragged = dragState.item?.id === t.id;
-    const taskBaseStyle = t.isNewFinish ? 'bg-red-950/40 border-red-500 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'bg-zinc-900 border-zinc-800';
+    // Tareas usan Naranja para el estado visualizado
+    const taskBaseStyle = t.isNewFinish ? 'bg-amber-950/40 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'bg-zinc-900 border-zinc-800';
 
     return (
       <div 
@@ -1107,32 +1143,32 @@ const App = () => {
         <div className="flex justify-between items-center h-5">
           <div className="flex-1 min-w-0 pr-2">
             {editingId === t.id ? ( <input className="w-full bg-zinc-800 border border-blue-500 text-[10px] font-black p-1 px-2 rounded outline-none text-white uppercase" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus />
-            ) : ( <span className={`text-[12px] font-black uppercase truncate block leading-none pointer-events-none ${t.isNewFinish ? 'text-red-300' : 'text-zinc-400'}`}>{t.label}</span> )}
+            ) : ( <span className={`text-[12px] font-black uppercase truncate block leading-none pointer-events-none ${t.isNewFinish ? 'text-amber-300' : 'text-zinc-400'}`}>{t.label}</span> )}
           </div>
-          {editingId !== t.id && <div className={`p-1 pointer-events-none ${t.isNewFinish ? 'text-red-800' : 'text-zinc-800'}`}><GripVertical size={14} /></div>}
+          {editingId !== t.id && <div className={`p-1 pointer-events-none ${t.isNewFinish ? 'text-amber-800' : 'text-zinc-800'}`}><GripVertical size={14} /></div>}
         </div>
         
         <div className="flex items-center justify-between pointer-events-none mt-1">
           <div className="flex-1">
               {editingId === t.id ? (
                   <div className="flex items-center gap-2 animate-in fade-in pointer-events-auto">
-                      <div className="relative"><input type="text" inputMode="numeric" placeholder="0" value={editBuf.h} onChange={e => setEditBuf({...editBuf, h: e.target.value.replace(/\D/g,'')})} className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 text-center text-lg font-mono outline-none focus:border-blue-500 transition-colors"/><span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-500 font-bold uppercase">H</span></div><span className="text-zinc-600 font-bold">:</span>
-                      <div className="relative"><input type="text" inputMode="numeric" placeholder="0" value={editBuf.m} onChange={e => setEditBuf({...editBuf, m: e.target.value.replace(/\D/g,'')})} className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 text-center text-lg font-mono outline-none focus:border-blue-500 transition-colors"/><span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-500 font-bold uppercase">M</span></div><span className="text-zinc-600 font-bold">:</span>
-                      <div className="relative"><input type="text" inputMode="numeric" placeholder="0" value={editBuf.s} onChange={e => setEditBuf({...editBuf, s: e.target.value.replace(/\D/g,'')})} className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 text-center text-lg font-mono outline-none focus:border-amber-500 transition-colors"/><span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-amber-500 font-bold uppercase">S</span></div>
+                      <div className="relative"><input type="text" inputMode="numeric" placeholder="0" value={editBuf.h} onChange={e => setEditBuf({...editBuf, h: e.target.value.replace(/\D/g,'')})} className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 text-center text-lg font-mono outline-none focus:border-blue-500"/><span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-500 font-bold uppercase">H</span></div><span className="text-zinc-600 font-bold">:</span>
+                      <div className="relative"><input type="text" inputMode="numeric" placeholder="0" value={editBuf.m} onChange={e => setEditBuf({...editBuf, m: e.target.value.replace(/\D/g,'')})} className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 text-center text-lg font-mono outline-none focus:border-blue-500"/><span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-500 font-bold uppercase">M</span></div><span className="text-zinc-600 font-bold">:</span>
+                      <div className="relative"><input type="text" inputMode="numeric" placeholder="0" value={editBuf.s} onChange={e => setEditBuf({...editBuf, s: e.target.value.replace(/\D/g,'')})} className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 text-center text-lg font-mono outline-none focus:border-amber-500"/><span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-amber-500 font-bold uppercase">S</span></div>
                   </div>
-              ) : ( <div className={`text-2xl font-mono font-bold leading-none tracking-tighter transition-colors duration-300 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.remainingSeconds === 0 ? 'text-red-500' : 'text-white')} ${t.isNewFinish ? 'animate-pulse' : ''}`}>{formatTime(t.remainingSeconds)}</div> )}
+              ) : ( <div className={`text-2xl font-mono font-bold leading-none tracking-tighter duration-300 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.remainingSeconds === 0 ? 'text-amber-500' : 'text-white')} ${t.isNewFinish ? 'animate-pulse' : ''}`}>{formatTime(t.remainingSeconds)}</div> )}
           </div>
 
           <div className="flex items-center gap-1 border-l border-zinc-800 pl-2 shrink-0 pointer-events-auto h-full">
             {editingId === t.id ? (
-              <div className="flex gap-1"><button onClick={() => setEditingId(null)} className="p-2 bg-zinc-700/80 rounded-lg text-white active:bg-zinc-600 active:scale-90 transition-all"><X size={16}/></button><button onClick={() => saveEdit(t.id)} className="p-2 bg-blue-600 rounded-lg text-white active:bg-blue-500 active:scale-90 transition-all shadow-md"><Check size={16}/></button></div>
+              <div className="flex gap-1"><button onClick={() => setEditingId(null)} className="p-2 bg-zinc-700/80 rounded-lg text-white transition-opacity active:opacity-50"><X size={16}/></button><button onClick={() => saveEdit(t.id)} className="p-2 bg-blue-600 rounded-lg text-white transition-opacity active:opacity-50 shadow-md"><Check size={16}/></button></div>
             ) : (
               <>
-                {t.isNewFinish && ( <button onClick={(e) => { e.stopPropagation(); dismissNewFinish(t.id); }} className="p-1 px-2.5 bg-red-600 text-white rounded-lg font-black text-[9px] uppercase flex items-center gap-1 animate-pulse active:bg-red-500 mr-1 shadow-[0_0_10px_rgba(220,38,38,0.5)]"><Check size={12}/> Visto</button> )}
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-300 active:text-white' : 'text-zinc-700 active:text-amber-500'}`}><RotateCcw size={16} /></button>
-                <button onClick={() => { const hVal = Math.floor(t.initialSeconds / 3600); const mVal = Math.floor((t.initialSeconds % 3600) / 60); const sVal = t.initialSeconds % 60; setEditBuf({ label: t.label, h: hVal > 0 ? String(hVal) : '', m: mVal > 0 ? String(mVal) : '', s: sVal > 0 ? String(sVal) : '' }); setEditingId(t.id); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-400 active:text-white' : 'text-zinc-700 active:text-blue-400'}`}><Edit2 size={16} /></button>
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-red-300' : 'text-zinc-600')} active:scale-90 transition-transform`}>{t.isRunning && t.remainingSeconds > 0 ? <Pause size={18} /> : <Play size={18} />}</button>
-                <button onClick={async () => { const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-500 active:text-white' : 'text-zinc-800 active:text-red-600'}`}><Trash2 size={16} /></button>
+                {t.isNewFinish && ( <button onClick={(e) => { e.stopPropagation(); dismissNewFinish(t.id); }} className="p-1 px-2.5 bg-amber-600 text-white rounded-lg font-black text-[9px] uppercase flex items-center gap-1 animate-pulse transition-opacity active:opacity-50 mr-1 shadow-[0_0_10px_rgba(245,158,11,0.5)]"><RolledScrollIcon size={12}/> Visto</button> )}
+                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 transition-transform active:scale-90 ${t.isNewFinish ? 'text-amber-300' : 'text-zinc-700'}`}><RotateCcw size={16} /></button>
+                <button onClick={() => { const hVal = Math.floor(t.initialSeconds / 3600); const mVal = Math.floor((t.initialSeconds % 3600) / 60); const sVal = t.initialSeconds % 60; setEditBuf({ label: t.label, h: hVal > 0 ? String(hVal) : '', m: mVal > 0 ? String(mVal) : '', s: sVal > 0 ? String(sVal) : '' }); setEditingId(t.id); }} className={`p-1.5 transition-transform active:scale-90 ${t.isNewFinish ? 'text-amber-400' : 'text-zinc-700'}`}><Edit2 size={16} /></button>
+                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 transition-transform active:scale-90 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-amber-300' : 'text-zinc-600')}`}>{t.isRunning && t.remainingSeconds > 0 ? <Pause size={18} /> : <Play size={18} />}</button>
+                <button onClick={async () => { const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); }} className={`p-1.5 transition-transform active:scale-90 ${t.isNewFinish ? 'text-amber-500' : 'text-zinc-800'}`}><Trash2 size={16} /></button>
               </>
             )}
           </div>
@@ -1141,21 +1177,28 @@ const App = () => {
     );
   };
 
+  // CONFIGURACIÓN DINÁMICA DE LA ALERTA GIGANTE
+  const alertConfig = {
+      war: { bg: 'bg-red-600', border: 'border-red-400', text: 'text-red-950', btnBg: 'bg-red-950', btnText: 'text-red-400', icon: <HornIcon size={64} className="mx-auto mb-4 animate-bounce text-red-950"/> },
+      task: { bg: 'bg-amber-500', border: 'border-amber-300', text: 'text-amber-950', btnBg: 'bg-amber-950', btnText: 'text-amber-400', icon: <RolledScrollIcon size={64} className="mx-auto mb-4 animate-bounce text-amber-950"/> },
+      clan: { bg: 'bg-purple-600', border: 'border-purple-400', text: 'text-purple-950', btnBg: 'bg-purple-950', btnText: 'text-purple-400', icon: <CrownScrollIcon size={64} className="mx-auto mb-4 animate-bounce text-purple-950"/> }
+  };
+  const currentAlertConf = activeAlert ? (alertConfig[activeAlert.type] || alertConfig.task) : alertConfig.task;
+
   return (
-    <div className="min-h-screen bg-black text-zinc-100 p-4 pb-32 overflow-x-hidden font-sans">
+    <div className="min-h-screen bg-black text-zinc-100 p-4 pb-32 overflow-x-hidden font-sans" style={{ WebkitTapHighlightColor: 'transparent' }}>
       <style>{`
         @keyframes tremble { 0% { transform: rotate(1.5deg) scale(1.05); } 50% { transform: rotate(-1.5deg) scale(1.05); } 100% { transform: rotate(1.5deg) scale(1.05); } }
         .is-ghost { animation: tremble 0.12s infinite !important; }
         .drop-inside-target { background-color: rgba(245, 158, 11, 0.08) !important; border-color: #f59e0b !important; }
         .drop-extract-target { background-color: rgba(239, 68, 68, 0.15) !important; border-color: #ef4444 !important; }
-        * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+        * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
         input { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
       `}</style>
 
-      {/* CONSOLA DE LOGS TÁCTICA */}
       {showLogs && (
         <div className="fixed bottom-0 left-0 w-full h-64 bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-800 z-[900] shadow-[0_-20px_50px_rgba(0,0,0,0.5)] flex flex-col animate-in slide-in-from-bottom-full duration-300">
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-black/50">
@@ -1163,7 +1206,7 @@ const App = () => {
                     <Activity size={16} className="text-zinc-500"/>
                     <span className="text-xs font-black uppercase text-zinc-400 tracking-widest">Terminal de Registro</span>
                 </div>
-                <button onClick={() => setShowLogs(false)} className="text-zinc-500 active:text-white p-1"><X size={16}/></button>
+                <button onClick={() => setShowLogs(false)} className="text-zinc-500 transition-opacity active:opacity-50 p-1"><X size={16}/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-[10px] custom-scrollbar">
                 {actionLog.map((log, i) => (
@@ -1174,16 +1217,15 @@ const App = () => {
                         </span>
                     </div>
                 ))}
-                {actionLog.length === 0 && <p className="text-zinc-600 italic text-center mt-10">Esperando eventos en el campo...</p>}
+                {actionLog.length === 0 && <p className="text-zinc-600 italic text-center mt-10">Esperando eventos...</p>}
             </div>
         </div>
       )}
 
-      {/* MODAL DE AYUDA GLOBAL CONSOLIDADA */}
       {activeHelp && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setActiveHelp(null)}>
           <div className="bg-zinc-900 border border-blue-500 p-6 rounded-3xl max-w-sm w-full relative shadow-[0_0_40px_rgba(59,130,246,0.3)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-             <button onClick={() => setActiveHelp(null)} className="absolute top-4 right-4 text-zinc-500 active:text-white p-2"><X size={20}/></button>
+             <button onClick={() => setActiveHelp(null)} className="absolute top-4 right-4 text-zinc-500 transition-opacity active:opacity-50 p-2"><X size={20}/></button>
              <div className="flex items-center gap-3 mb-4 text-blue-400">
                <Info size={24} />
                <h3 className="font-black uppercase text-lg leading-tight">{t(`help_${activeHelp}_title`)}</h3>
@@ -1191,12 +1233,11 @@ const App = () => {
              <div className="text-zinc-300 text-sm font-bold whitespace-pre-wrap leading-relaxed">
                  {t(`help_${activeHelp}_desc`)}
              </div>
-             <button onClick={() => setActiveHelp(null)} className="w-full mt-6 bg-blue-900/30 text-blue-400 py-3 rounded-xl font-black uppercase text-xs active:bg-blue-600 active:text-white transition-colors">{t('understood')}</button>
+             <button onClick={() => setActiveHelp(null)} className="w-full mt-6 bg-blue-900/30 text-blue-400 py-3 rounded-xl font-black uppercase text-xs transition-opacity active:opacity-50">{t('understood')}</button>
           </div>
         </div>
       )}
 
-      {/* AUDIO INVISIBLE PARA MANTENER ACTIVO IOS/ANDROID */}
       <audio id="silent-audio-hack" loop autoPlay playsInline style={{display: 'none'}}>
           <source src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vwAAABMYXZjNTkuMzcuMTAwAAAAAAAAAAAAAAAAJAAAAAAAAAAAScCAgP/zhAAAAAAAAAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV" type="audio/mpeg" />
       </audio>
@@ -1212,27 +1253,34 @@ const App = () => {
             <div className="bg-zinc-900 border border-amber-500 w-full max-w-sm rounded-[32px] shadow-[0_0_50px_rgba(245,158,11,0.15)] relative animate-in zoom-in duration-300 flex flex-col max-h-[85vh]">
                <div className="p-5 pb-3 border-b border-zinc-800 flex justify-between items-center shrink-0">
                    <div className="flex items-center gap-2"><Music className="text-amber-500" size={24} /><h2 className="text-lg font-black text-white uppercase leading-none tracking-wide">{t('soundConfig')}</h2></div>
-                   <button onClick={() => { setShowSoundMenu(false); stopInfiniteAlarm(); }} className="text-zinc-500 active:text-white p-1"><X size={24}/></button>
+                   <button onClick={() => { setShowSoundMenu(false); stopInfiniteAlarm(); }} className="text-zinc-500 transition-opacity active:opacity-50 p-1"><X size={24}/></button>
                </div>
                <div className="overflow-y-auto p-4 space-y-6">
                    <div>
-                       <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><BellRing size={12}/> {t('earlyWarnings')}</h3>
+                       <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><HornIcon size={14}/> {t('earlyWarnings')}</h3>
                        <div className="space-y-1.5">
                            {SOUND_PROFILES.map(prof => (
-                               <div key={`war-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors cursor-pointer ${warSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800 active:border-zinc-600'}`} onClick={() => { setWarSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ warSound: prof.id }); }}>
-                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 active:text-amber-500"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${warSound === prof.id ? 'text-amber-500' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{warSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
+                               <div key={`war-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer ${warSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800'}`} onClick={() => { setWarSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ warSound: prof.id }); }}>
+                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 transition-opacity active:opacity-50"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${warSound === prof.id ? 'text-amber-500' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{warSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
                                </div>
                            ))}
                        </div>
                    </div>
                    <div>
-                       <h3 className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-3 flex items-center gap-2"><Check size={12}/> {t('taskFinished')}</h3>
+                       <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center gap-2"><RolledScrollIcon size={14}/> {t('taskFinished')}</h3>
                        <div className="space-y-1.5">
                            {SOUND_PROFILES.map(prof => (
-                               <div key={`task-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border transition-colors cursor-pointer ${taskSound === prof.id ? 'bg-blue-600/20 border-blue-500' : 'bg-zinc-800/50 border-zinc-800 active:border-zinc-600'}`} onClick={() => { setTaskSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ taskSound: prof.id }); }}>
-                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 active:text-blue-500"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${taskSound === prof.id ? 'text-blue-400' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{taskSound === prof.id && <Check size={16} className="text-blue-500 mr-2"/>}
+                               <div key={`task-${prof.id}`} className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer ${taskSound === prof.id ? 'bg-amber-600/20 border-amber-500' : 'bg-zinc-800/50 border-zinc-800'}`} onClick={() => { setTaskSound(prof.id); playPreview(prof.id); if(syncRef.current) syncRef.current({ taskSound: prof.id }); }}>
+                                   <div className="flex items-center gap-3"><button onClick={(e) => { e.stopPropagation(); playPreview(prof.id); }} className="p-1.5 bg-zinc-950 rounded-lg text-zinc-400 transition-opacity active:opacity-50"><Play size={12}/></button><div><span className={`block text-xs font-black uppercase ${taskSound === prof.id ? 'text-amber-400' : 'text-zinc-300'}`}>{prof.name}</span><span className="block text-[8px] text-zinc-500 font-bold uppercase">{prof.type}</span></div></div>{taskSound === prof.id && <Check size={16} className="text-amber-500 mr-2"/>}
                                </div>
                            ))}
+                       </div>
+                   </div>
+                   <div>
+                       <h3 className="text-[10px] font-black text-purple-500 uppercase tracking-widest mb-3 flex items-center gap-2"><CrownScrollIcon size={14}/> {t('clanMessages')}</h3>
+                       <div className="p-4 bg-purple-900/10 border border-purple-500/20 rounded-xl text-center">
+                           <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">MÓDULO DE SERVIDOR EN CONSTRUCCIÓN</span>
+                           <span className="text-[9px] text-zinc-500">Requiere backend de Telegram para disparar push a la alianza.</span>
                        </div>
                    </div>
                </div>
@@ -1245,7 +1293,7 @@ const App = () => {
             <div className="bg-zinc-900 w-full max-w-xs p-6 rounded-[32px] shadow-2xl animate-in zoom-in duration-300 border border-amber-500">
               <AlertTriangle size={48} className="mx-auto mb-4 text-amber-500"/><h2 className="text-xl font-black text-white uppercase mb-2 leading-none">{t('confirmResetTitle')}</h2>
               <p className="text-zinc-400 font-bold mb-6 text-sm leading-tight whitespace-pre-wrap">{t('confirmResetDesc')} <span className="text-amber-500">{confirmBoxReset.name}</span>?</p>
-              <div className="flex gap-3"><button onClick={() => setConfirmBoxReset(null)} className="flex-1 bg-amber-600 text-white py-3 rounded-xl font-black text-xs uppercase shadow-lg active:scale-95 transition-transform active:bg-amber-500">{t('cancel')}</button><button onClick={executeBoxReset} className="flex-1 bg-zinc-800 text-zinc-400 py-3 rounded-xl font-black text-xs uppercase transition-colors active:bg-zinc-700 active:scale-95 active:text-red-500">{t('resetAll')}</button></div>
+              <div className="flex gap-3"><button onClick={() => setConfirmBoxReset(null)} className="flex-1 bg-amber-600 text-white py-3 rounded-xl font-black text-xs uppercase shadow-lg transition-opacity active:opacity-50">{t('cancel')}</button><button onClick={executeBoxReset} className="flex-1 bg-zinc-800 text-zinc-400 py-3 rounded-xl font-black text-xs uppercase transition-opacity active:opacity-50 text-red-400">{t('resetAll')}</button></div>
             </div>
           </div>
       )}
@@ -1255,24 +1303,24 @@ const App = () => {
           <div className="flex items-center gap-1.5">
             <ShieldAlert className="text-amber-500 shrink-0" size={20} />
             <h1 className="text-lg xs:text-xl font-black text-amber-500 uppercase leading-none tracking-tighter hidden xs:block mr-1">{t('appTitle')}</h1>
-            <button onClick={() => setActiveHelp('header')} className="text-zinc-600 active:text-blue-400 transition-colors p-1"><Info size={14}/></button>
+            <button onClick={() => setActiveHelp('header')} className="text-zinc-600 transition-opacity active:opacity-50 p-1"><Info size={14}/></button>
 
-            <button onClick={toggleLanguage} className="flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-md px-1.5 py-1 xs:ml-2 active:bg-zinc-700 transition-colors">
+            <button onClick={toggleLanguage} className="flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-md px-1.5 py-1 xs:ml-2 transition-opacity active:opacity-50">
                 <Globe size={12} className="text-zinc-400"/>
                 <span className="text-[10px] font-black text-white uppercase">{lang}</span>
             </button>
-            <button onClick={() => setShowLogs(!showLogs)} className={`ml-1 flex items-center p-1.5 rounded-md border transition-colors ${showLogs ? 'bg-zinc-700 border-zinc-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
+            <button onClick={() => setShowLogs(!showLogs)} className={`ml-1 flex items-center p-1.5 rounded-md border transition-opacity active:opacity-50 ${showLogs ? 'bg-zinc-700 border-zinc-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
                 <TerminalSquare size={14}/>
             </button>
           </div>
           
           <div className="flex gap-1">
-            <button onClick={toggleWakeLock} className={`p-1.5 rounded-lg border transition-colors ${wakeLockActive ? 'bg-blue-600 text-white border-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><Eye size={18} /></button>
-            <button onClick={toggleSoundProfile} className={`p-1.5 rounded-lg border transition-colors ${soundProfile !== 'muted' ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>{soundProfile === 'siren' ? <Volume2 size={18}/> : soundProfile === 'radar' ? <Volume1 size={18}/> : <VolumeX size={18}/>}</button>
-            <button onClick={() => setShowSoundMenu(true)} className="p-1.5 bg-zinc-800 text-amber-500 border border-zinc-700 rounded-lg shadow-lg active:bg-zinc-700 transition-colors"><Music size={18}/></button>
-            <button onClick={() => { const next = !vibrateOn; setVibrateOn(next); if(!next) stopInfiniteAlarm(); if(syncRef.current) syncRef.current({ vibrateOn: next }); addLog(`Vibración de alertas: ${next ? 'ON' : 'OFF'}`, 'info'); }} className={`p-1.5 rounded-lg border transition-colors ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><VibrateIcon size={18}/></button>
+            <button onClick={toggleWakeLock} className={`p-1.5 rounded-lg border transition-opacity active:opacity-50 ${wakeLockActive ? 'bg-blue-600 text-white border-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><Eye size={18} /></button>
+            <button onClick={toggleSoundProfile} className={`p-1.5 rounded-lg border transition-opacity active:opacity-50 ${soundProfile !== 'muted' ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>{soundProfile === 'siren' ? <Volume2 size={18}/> : soundProfile === 'radar' ? <Volume1 size={18}/> : <VolumeX size={18}/>}</button>
+            <button onClick={() => setShowSoundMenu(true)} className="p-1.5 bg-zinc-800 text-amber-500 border border-zinc-700 rounded-lg shadow-lg transition-opacity active:opacity-50"><Music size={18}/></button>
+            <button onClick={() => { const next = !vibrateOn; setVibrateOn(next); if(!next) stopInfiniteAlarm(); if(syncRef.current) syncRef.current({ vibrateOn: next }); addLog(`Vibración de alertas: ${next ? 'ON' : 'OFF'}`, 'info'); }} className={`p-1.5 rounded-lg border transition-opacity active:opacity-50 ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><VibrateIcon size={18}/></button>
             
-            <button onClick={toggleSystemNotifications} className={`p-1.5 rounded-lg border transition-colors ${sysNotifOn ? 'bg-emerald-600 text-white border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700 active:text-white'}`}>
+            <button onClick={toggleSystemNotifications} className={`p-1.5 rounded-lg border transition-opacity active:opacity-50 ${sysNotifOn ? 'bg-emerald-600 text-white border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>
                 <Smartphone size={18}/>
             </button>
           </div>
@@ -1286,37 +1334,37 @@ const App = () => {
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-[32px] p-6 relative overflow-hidden shadow-2xl">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500"></div>
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-red-600"></div>
           <div className="text-[11vw] xs:text-5xl font-mono font-black text-white text-center tabular-nums leading-none mb-3 tracking-tighter">{String(warRem.h).padStart(2, '0')}:{String(warRem.m).padStart(2, '0')}:{String(warRem.s).padStart(2, '0')}</div>
           
           <div className="pt-3 border-t border-zinc-800/50 flex justify-between items-end">
             <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-zinc-500 font-black uppercase tracking-wide mb-1">{t('endTime')}</span>
-                <button onClick={() => setActiveHelp('time')} className="text-zinc-600 active:text-blue-400 mb-1 transition-colors"><Info size={12}/></button>
+                <button onClick={() => setActiveHelp('time')} className="text-zinc-600 transition-opacity active:opacity-50 mb-1"><Info size={12}/></button>
             </div>
-            <div className="flex items-baseline gap-1 text-amber-500"><span className="text-3xl font-mono font-black leading-none tracking-tight">{globalTimePart}</span><span className="text-sm font-black uppercase mb-0.5">{globalAmpmPart}</span></div>
+            <div className="flex items-baseline gap-1 text-red-500"><span className="text-3xl font-mono font-black leading-none tracking-tight">{globalTimePart}</span><span className="text-sm font-black uppercase mb-0.5">{globalAmpmPart}</span></div>
           </div>
 
           <div className="mt-5 border-t border-zinc-800/50 pt-4">
               <div className="flex justify-between items-center mb-3">
-                  <span className="text-[9px] font-black text-amber-500/50 uppercase tracking-widest flex items-center gap-1"><BellRing size={10}/> {t('earlyWarnings')}</span>
-                  <button onClick={syncWar} className="bg-zinc-800 text-zinc-400 active:text-white border border-zinc-700 active:border-amber-500 text-[9px] font-black py-1 px-3 rounded-full flex items-center gap-1 active:scale-95 transition-all"><RotateCcw size={10} /> {t('sync')}</button>
+                  <span className="text-[9px] font-black text-red-500/80 uppercase tracking-widest flex items-center gap-1"><HornIcon size={10}/> {t('earlyWarnings')}</span>
+                  <button onClick={syncWar} className="bg-zinc-800 text-zinc-400 border border-zinc-700 text-[9px] font-black py-1 px-3 rounded-full flex items-center gap-1 transition-opacity active:opacity-50"><RotateCcw size={10} /> {t('sync')}</button>
               </div>
               <div className="flex gap-2 mb-3">
-                  <div className="relative flex-1"><input type="text" inputMode="numeric" placeholder="0" value={inputH} onChange={handleNum(setInputH)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 text-xl font-mono text-center outline-none focus:border-amber-500 transition-colors" /><p className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-600 font-bold uppercase">H</p></div>
-                  <div className="relative flex-1"><input type="text" inputMode="numeric" placeholder="0" value={inputM} onChange={handleNum(setInputM)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 text-xl font-mono text-center outline-none focus:border-amber-500 transition-colors" /><p className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-600 font-bold uppercase">M</p></div>
+                  <div className="relative flex-1"><input type="text" inputMode="numeric" placeholder="0" value={inputH} onChange={handleNum(setInputH)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 text-xl font-mono text-center outline-none focus:border-red-500" /><p className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-600 font-bold uppercase">H</p></div>
+                  <div className="relative flex-1"><input type="text" inputMode="numeric" placeholder="0" value={inputM} onChange={handleNum(setInputM)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 text-xl font-mono text-center outline-none focus:border-red-500" /><p className="absolute -top-2 left-1/2 -translate-x-1/2 bg-zinc-900 px-1 text-[8px] text-zinc-600 font-bold uppercase">M</p></div>
               </div>
               <div className="flex gap-2 h-10">
                   {warAlarms.map(a => {
                       if (a.custom) {
                           return (
-                              <div key={a.id} className={`flex-[2] flex items-center justify-between rounded-xl border transition-colors ${a.on ? 'bg-amber-600 border-amber-500' : 'bg-zinc-950 border-zinc-800'}`}>
+                              <div key={a.id} className={`flex-[2] flex items-center justify-between rounded-xl border ${a.on ? 'bg-red-600 border-red-500' : 'bg-zinc-950 border-zinc-800'}`}>
                                   <div className="flex flex-1 items-center justify-center gap-0.5 px-1 py-1"><input type="text" inputMode="numeric" placeholder="H" value={a.h} disabled={a.on} onChange={e => handleCustomAlarmChange('h', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} />:<input type="text" inputMode="numeric" placeholder="M" value={a.m} disabled={a.on} onChange={e => handleCustomAlarmChange('m', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} />:<input type="text" inputMode="numeric" placeholder="S" value={a.s} disabled={a.on} onChange={e => handleCustomAlarmChange('s', e.target.value)} className={`w-7 bg-transparent text-center text-xs font-black outline-none placeholder-zinc-700 ${a.on ? 'text-white' : 'text-zinc-500'}`} /></div>
-                                  <button onClick={() => toggleAlarm(a.id)} className={`h-full px-2.5 rounded-r-xl border-l flex items-center justify-center transition-colors ${a.on ? 'border-amber-700 active:bg-amber-700' : 'border-zinc-800 active:bg-zinc-800'}`}><div className={`w-2 h-2 rounded-full ${a.on ? 'bg-white shadow-[0_0_5px_white]' : 'bg-zinc-700'}`} /></button>
+                                  <button onClick={() => toggleAlarm(a.id)} className={`h-full px-2.5 rounded-r-xl border-l flex items-center justify-center transition-colors ${a.on ? 'border-red-700 bg-red-700' : 'border-zinc-800 hover:bg-zinc-800'}`}><div className={`w-2 h-2 rounded-full ${a.on ? 'bg-white shadow-[0_0_5px_white]' : 'bg-zinc-700'}`} /></button>
                               </div>
                           );
                       }
-                      return ( <button key={a.id} onClick={() => toggleAlarm(a.id)} className={`flex-1 rounded-xl text-xs font-black transition-all border ${a.on ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-zinc-950 text-zinc-500 border-zinc-800 active:border-zinc-600'}`}>{a.mins}M</button> );
+                      return ( <button key={a.id} onClick={() => toggleAlarm(a.id)} className={`flex-1 rounded-xl text-xs font-black transition-opacity active:opacity-50 border ${a.on ? 'bg-red-600 text-white border-red-500 shadow-[0_0_15px_rgba(220,38,38,0.3)]' : 'bg-zinc-950 text-zinc-500 border-zinc-800'}`}>{a.mins}M</button> );
                   })}
               </div>
           </div>
@@ -1324,20 +1372,20 @@ const App = () => {
 
         <div className="grid grid-cols-2 gap-2 relative">
             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                 <button onClick={() => setActiveHelp('creation')} className="bg-zinc-900 border border-zinc-700 text-zinc-500 active:text-blue-400 transition-colors p-1.5 rounded-full shadow-lg"><Info size={14}/></button>
+                 <button onClick={() => setActiveHelp('creation')} className="bg-zinc-900 border border-zinc-700 text-zinc-500 transition-opacity active:opacity-50 p-1.5 rounded-full shadow-lg"><Info size={14}/></button>
             </div>
             
-            <button onClick={() => { setShowCronoForm(!showCronoForm); setShowBoxForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-all ${showCronoForm ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
+            <button onClick={() => { setShowCronoForm(!showCronoForm); setShowBoxForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-opacity active:opacity-50 ${showCronoForm ? 'bg-amber-500 text-black border-amber-500' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
                 {t('addCrono')}
             </button>
-            <button onClick={() => { setShowBoxForm(!showBoxForm); setShowCronoForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-all ${showBoxForm ? 'bg-blue-600 text-white border-blue-600' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
+            <button onClick={() => { setShowBoxForm(!showBoxForm); setShowCronoForm(false); }} className={`py-3 rounded-2xl border font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-opacity active:opacity-50 ${showBoxForm ? 'bg-blue-600 text-white border-blue-600' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}>
                 {t('addSection')}
             </button>
         </div>
 
         {showCronoForm && (
             <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-3 space-y-3 animate-in slide-in-from-top-2">
-                <div className="flex justify-between items-center px-1"><span className="text-[10px] font-black uppercase text-zinc-500">{t('createCronoTitle')}</span><div className="flex gap-2"><button onClick={() => changeDraftCount(false, false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 active:text-white active:bg-zinc-700 transition-colors"><Minus size={14}/></button><button onClick={() => changeDraftCount(false, true)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 active:text-white active:bg-zinc-700 transition-colors"><Plus size={14}/></button></div></div>
+                <div className="flex justify-between items-center px-1"><span className="text-[10px] font-black uppercase text-zinc-500">{t('createCronoTitle')}</span><div className="flex gap-2"><button onClick={() => changeDraftCount(false, false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 transition-opacity active:opacity-50"><Minus size={14}/></button><button onClick={() => changeDraftCount(false, true)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 transition-opacity active:opacity-50"><Plus size={14}/></button></div></div>
                 <div className="space-y-2">
                     {cronoDrafts.map((draft, i) => (
                         <div key={draft.id} className="space-y-2 p-2 bg-black/40 rounded-xl border border-zinc-800 animate-in fade-in">
@@ -1350,7 +1398,7 @@ const App = () => {
                         </div>
                     ))}
                 </div>
-                <button onClick={addCrono} className="w-full bg-amber-600 text-white rounded-xl py-3 font-black text-[10px] uppercase shadow-lg active:scale-95 transition-transform">{t('createCronoBtn')}</button>
+                <button onClick={addCrono} className="w-full bg-amber-600 text-white rounded-xl py-3 font-black text-[10px] uppercase shadow-lg transition-opacity active:opacity-50">{t('createCronoBtn')}</button>
             </div>
         )}
 
@@ -1364,9 +1412,9 @@ const App = () => {
                 <div className="flex items-center justify-between px-1">
                     <label className="flex items-center gap-2 cursor-pointer group">
                         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${includeInitialCrono ? 'bg-blue-600 border-blue-600' : 'border-zinc-700'}`}><input type="checkbox" className="hidden" checked={includeInitialCrono} onChange={() => setIncludeInitialCrono(!includeInitialCrono)} />{includeInitialCrono && <Check size={12} className="text-white"/>}</div>
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase active:text-blue-400">{t('includeCronos')}</span>
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase transition-opacity active:opacity-50">{t('includeCronos')}</span>
                     </label>
-                    {includeInitialCrono && ( <div className="flex gap-2"><button onClick={() => changeDraftCount(true, false)} className="p-1 bg-zinc-800 rounded text-zinc-400 active:text-white"><Minus size={12}/></button><button onClick={() => changeDraftCount(true, true)} className="p-1 bg-zinc-800 rounded text-zinc-400 active:text-white"><Plus size={12}/></button></div> )}
+                    {includeInitialCrono && ( <div className="flex gap-2"><button onClick={() => changeDraftCount(true, false)} className="p-1 bg-zinc-800 rounded text-zinc-400 transition-opacity active:opacity-50"><Minus size={12}/></button><button onClick={() => changeDraftCount(true, true)} className="p-1 bg-zinc-800 rounded text-zinc-400 transition-opacity active:opacity-50"><Plus size={12}/></button></div> )}
                 </div>
 
                 {includeInitialCrono && (
@@ -1383,7 +1431,7 @@ const App = () => {
                         ))}
                     </div>
                 )}
-                <button onClick={addBox} className="w-full bg-blue-600 text-white rounded-xl py-3 font-black text-[10px] uppercase shadow-lg active:scale-95 transition-transform">{t('createSectionBtn')}</button>
+                <button onClick={addBox} className="w-full bg-blue-600 text-white rounded-xl py-3 font-black text-[10px] uppercase shadow-lg transition-opacity active:opacity-50">{t('createSectionBtn')}</button>
             </div>
         )}
 
@@ -1424,8 +1472,8 @@ const App = () => {
 
                                 {editingBoxId === box.id ? (
                                     <div className="flex-1 flex flex-col p-3 bg-zinc-900/90 w-full animate-in fade-in">
-                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full ${newBoxColor === c.hex ? 'border-2 border-white scale-110 shadow-lg' : 'opacity-40'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 active:text-white active:bg-zinc-700 active:scale-90 transition-all shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white active:scale-90 shadow-md active:bg-blue-500 transition-all"><Check size={14}/></button></div></div>
-                                        <div className="flex items-center justify-between px-1 py-2 border-t border-zinc-800/80"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest flex items-center gap-1.5"><Plus size={10}/> {t('addCrono')}</span><div className="flex gap-1.5"><button onClick={() => handleEditBoxDraftCount(false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 active:text-white active:bg-zinc-700 transition-colors shadow-sm"><Minus size={12}/></button><button onClick={() => handleEditBoxDraftCount(true)} className="p-1.5 bg-blue-600/20 text-blue-400 rounded-lg active:bg-blue-600 active:text-white transition-colors shadow-sm"><Plus size={12}/></button></div></div>
+                                        <div className="flex gap-2 items-center w-full mb-3"><input className="min-w-0 w-full bg-zinc-800 text-xs font-black p-2 rounded outline-none border border-blue-500 uppercase text-white shadow-inner" value={editBuf.label} onChange={e => setEditBuf({...editBuf, label: e.target.value})} autoFocus placeholder={t('sectionNamePlaceholder')}/><div className="flex gap-1 shrink-0">{COLORS.map(c => <button key={c.hex} onClick={()=>setNewBoxColor(c.hex)} className={`w-5 h-5 rounded-full ${newBoxColor === c.hex ? 'border-2 border-white scale-110 shadow-lg' : 'opacity-40'}`} style={{backgroundColor:c.hex}}/>)}</div><div className="flex gap-1 shrink-0 border-l border-zinc-700 pl-2"><button onClick={() => { setEditingBoxId(null); setEditBoxDrafts([]); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm"><X size={14}/></button><button onClick={() => saveBoxEdit(box.id)} className="p-2 bg-blue-600 rounded-lg text-white transition-opacity active:opacity-50 shadow-md"><Check size={14}/></button></div></div>
+                                        <div className="flex items-center justify-between px-1 py-2 border-t border-zinc-800/80"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest flex items-center gap-1.5"><Plus size={10}/> {t('addCrono')}</span><div className="flex gap-1.5"><button onClick={() => handleEditBoxDraftCount(false)} className="p-1.5 bg-zinc-800 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm"><Minus size={12}/></button><button onClick={() => handleEditBoxDraftCount(true)} className="p-1.5 bg-blue-600/20 text-blue-400 rounded-lg transition-opacity active:opacity-50 shadow-sm"><Plus size={12}/></button></div></div>
                                         <div className="space-y-1.5 mt-1">
                                             {editBoxDrafts.map((draft, i) => (
                                                 <div key={draft.id} className="flex gap-1.5 items-center bg-black/40 p-1.5 rounded-lg border border-zinc-800/80">
@@ -1444,10 +1492,10 @@ const App = () => {
                                         <div className="absolute right-3 flex items-center pointer-events-auto h-full">
                                             {isMenuOpen ? (
                                                 <div className="flex items-center gap-1.5 animate-in slide-in-from-right-8 fade-in duration-200">
-                                                    <button onClick={() => setConfirmBoxReset({id: box.id, name: box.name})} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 active:text-amber-500 active:border-amber-500/50 transition-colors shadow-sm" title="Reiniciar todos"><RotateCcw size={16}/></button><button onClick={() => handleBoxPlayPause(box.id, !allPausedOrFinished)} className={`p-2 bg-zinc-800 border border-zinc-700 rounded-lg transition-colors shadow-sm ${!allPausedOrFinished ? 'text-zinc-400 active:text-yellow-400 active:border-yellow-500/50' : 'text-zinc-400 active:text-blue-400 active:border-blue-500/50'}`} title={!allPausedOrFinished ? 'Pausar todos' : 'Reanudar todos'}>{!allPausedOrFinished ? <Pause size={16}/> : <Play size={16}/>}</button><div className="w-px h-6 bg-zinc-700 mx-1"></div><button onClick={() => { setEditingBoxId(box.id); setEditBuf({label: box.name}); setNewBoxColor(box.color); setEditBoxDrafts([]); setOpenBoxMenuId(null); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 active:text-blue-400 transition-colors shadow-sm"><Edit2 size={16}/></button><button onClick={async () => { const nb = boxes.filter(b => b.id !== box.id); let nr = rootOrder.filter(i => i.id !== box.id); const nt = tasks.map(t => { if (t.boxId === box.id) { nr.push({ id: t.id, type: 'task' }); return { ...t, boxId: null }; } return t; }); setBoxes(nb); setRootOrder(nr); setTasks(nt); if(syncRef.current) syncRef.current({boxes: nb, rootOrder: nr, tasks: nt}); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 active:text-red-500 transition-colors shadow-sm"><Trash2 size={16}/></button><button onClick={() => setOpenBoxMenuId(null)} className="p-2 ml-1 text-zinc-500 active:text-white transition-colors bg-zinc-700/30 active:bg-zinc-700/80 rounded-full"><X size={18}/></button>
+                                                    <button onClick={() => setConfirmBoxReset({id: box.id, name: box.name})} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm" title="Reiniciar todos"><RotateCcw size={16}/></button><button onClick={() => handleBoxPlayPause(box.id, !allPausedOrFinished)} className={`p-2 bg-zinc-800 border border-zinc-700 rounded-lg transition-opacity active:opacity-50 shadow-sm`} title={!allPausedOrFinished ? 'Pausar todos' : 'Reanudar todos'}>{!allPausedOrFinished ? <Pause size={16}/> : <Play size={16}/>}</button><div className="w-px h-6 bg-zinc-700 mx-1"></div><button onClick={() => { setEditingBoxId(box.id); setEditBuf({label: box.name}); setNewBoxColor(box.color); setEditBoxDrafts([]); setOpenBoxMenuId(null); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm"><Edit2 size={16}/></button><button onClick={async () => { const nb = boxes.filter(b => b.id !== box.id); let nr = rootOrder.filter(i => i.id !== box.id); const nt = tasks.map(t => { if (t.boxId === box.id) { nr.push({ id: t.id, type: 'task' }); return { ...t, boxId: null }; } return t; }); setBoxes(nb); setRootOrder(nr); setTasks(nt); if(syncRef.current) syncRef.current({boxes: nb, rootOrder: nr, tasks: nt}); }} className="p-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 transition-opacity active:opacity-50 shadow-sm"><Trash2 size={16}/></button><button onClick={() => setOpenBoxMenuId(null)} className="p-2 ml-1 text-zinc-500 transition-opacity active:opacity-50 rounded-full"><X size={18}/></button>
                                                 </div>
                                             ) : (
-                                                <div className="flex items-center gap-1.5 animate-in fade-in"><button onClick={() => setOpenBoxMenuId(box.id)} className="p-2 text-zinc-500 active:text-white transition-colors active:bg-zinc-800 rounded-lg cursor-pointer"><Settings size={20} /></button><div className="w-px h-6 bg-zinc-800"></div><button onClick={() => toggleBoxCollapse(box.id)} className="p-2 text-zinc-400 active:text-white transition-colors active:bg-zinc-800 rounded-lg cursor-pointer">{box.isCollapsed ? <ChevronDown size={22}/> : <ChevronUp size={22}/>}</button></div>
+                                                <div className="flex items-center gap-1.5 animate-in fade-in"><button onClick={() => setOpenBoxMenuId(box.id)} className="p-2 text-zinc-500 transition-opacity active:opacity-50 rounded-lg cursor-pointer"><Settings size={20} /></button><div className="w-px h-6 bg-zinc-800"></div><button onClick={() => toggleBoxCollapse(box.id)} className="p-2 text-zinc-400 transition-opacity active:opacity-50 rounded-lg cursor-pointer">{box.isCollapsed ? <ChevronDown size={22}/> : <ChevronUp size={22}/>}</button></div>
                                             )}
                                         </div>
                                     </div>
@@ -1465,16 +1513,16 @@ const App = () => {
                                         {boxTasks.length > 0 ? (
                                             <div className="flex items-center justify-between gap-1 px-2 py-1.5 bg-zinc-900/60 rounded border border-zinc-800/80 shadow-inner">
                                                 <div className="flex gap-2.5 items-center shrink-0">
-                                                    {activeTasks.length > 0 && <span className="text-[10px] text-blue-400 font-bold tracking-widest uppercase flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> {activeTasks.length} Active</span>}
+                                                    {activeTasks.length > 0 && <span className="text-[10px] text-amber-400 font-bold tracking-widest uppercase flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> {activeTasks.length} Active</span>}
                                                     {pausedTasks.length > 0 && <span className="text-[10px] text-yellow-500 font-bold tracking-widest uppercase">{pausedTasks.length} Pause</span>}
-                                                    {finishedTasks.length > 0 && <span className="text-[10px] text-red-500 font-bold tracking-widest uppercase">{finishedTasks.length} End</span>}
+                                                    {finishedTasks.length > 0 && <span className="text-[10px] text-amber-600 font-bold tracking-widest uppercase">{finishedTasks.length} End</span>}
                                                 </div>
                                                 
                                                 {nextTask ? (
-                                                    <div className="flex items-center justify-end gap-1.5 flex-1 min-w-0 pl-3"><span className="text-[9px] text-blue-400/80 font-black tracking-widest uppercase truncate text-right">{nextTask.label}</span><span className="text-[13px] font-mono font-bold text-blue-300 tracking-tighter shrink-0">{formatTime(nextTask.remainingSeconds)}</span></div>
+                                                    <div className="flex items-center justify-end gap-1.5 flex-1 min-w-0 pl-3"><span className="text-[9px] text-amber-400/80 font-black tracking-widest uppercase truncate text-right">{nextTask.label}</span><span className="text-[13px] font-mono font-bold text-amber-300 tracking-tighter shrink-0">{formatTime(nextTask.remainingSeconds)}</span></div>
                                                 ) : pausedNextTask ? (
                                                     <div className="flex items-center justify-end gap-1.5 flex-1 min-w-0 pl-3"><span className="text-[9px] text-zinc-500 font-black tracking-widest uppercase truncate text-right">{pausedNextTask.label}</span><span className="text-[13px] font-mono font-bold text-yellow-600/80 tracking-tighter shrink-0">{formatTime(pausedNextTask.remainingSeconds)}</span></div>
-                                                ) : finishedTasks.length > 0 ? ( <div className="flex-1 flex justify-end pr-2"><Check size={14} className="text-red-500"/></div> ) : null}
+                                                ) : finishedTasks.length > 0 ? ( <div className="flex-1 flex justify-end pr-2"><Check size={14} className="text-amber-500"/></div> ) : null}
                                             </div>
                                         ) : ( <div className="py-2 text-center opacity-40"><span className="text-[9px] font-black uppercase tracking-widest text-zinc-600">{t('emptySection')}</span></div> )}
                                     </div>
@@ -1491,7 +1539,7 @@ const App = () => {
                                     data-dnd-target="true" data-dnd-id={box.id} data-dnd-type="box-footer"
                                     className={`h-8 border border-zinc-800 border-t-0 rounded-b-xl flex items-center justify-center transition-all ${isFooterTarget ? 'drop-extract-target h-12' : 'bg-zinc-900/30'}`}
                                 >
-                                    {dragState.item?.type === 'task' ? ( <div className={`text-[8px] font-black uppercase flex items-center gap-1 transition-colors pointer-events-none ${isFooterTarget ? 'text-red-500 scale-110' : 'text-zinc-600'}`}><ArrowDownToLine size={10} /> {isFooterTarget ? t('dropToExtract') : t('exitZone')}</div> ) : ( <div className="w-8 h-1 bg-zinc-800/50 rounded-full pointer-events-none" /> )}
+                                    {dragState.item?.type === 'task' ? ( <div className={`text-[8px] font-black uppercase flex items-center gap-1 transition-colors pointer-events-none ${isFooterTarget ? 'text-amber-500 scale-110' : 'text-zinc-600'}`}><ArrowDownToLine size={10} /> {isFooterTarget ? t('dropToExtract') : t('exitZone')}</div> ) : ( <div className="w-8 h-1 bg-zinc-800/50 rounded-full pointer-events-none" /> )}
                                 </div>
                             )}
 
@@ -1504,14 +1552,17 @@ const App = () => {
       
       {activeAlert && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md text-center">
-            <div className="bg-red-600 w-full max-w-xs p-8 rounded-[40px] shadow-[0_0_50px_rgba(220,38,38,0.5)] animate-in zoom-in duration-300 border-4 border-red-400 flex flex-col relative">
-              {alertQueue.length > 0 && ( <div className="absolute -top-3 -right-3 bg-white text-red-600 w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shadow-lg animate-pulse border-2 border-red-400">+{alertQueue.length}</div> )}
-              <AlertTriangle size={56} className="mx-auto mb-4 animate-bounce text-red-950"/>
-              <h2 className="text-xl font-black text-red-950 uppercase mb-4 leading-tight">{activeAlert.title}</h2>
-              <div className="text-red-950 font-bold mb-6 text-sm leading-tight whitespace-pre-wrap text-left bg-red-500/30 p-4 rounded-xl border border-red-500/50">{activeAlert.body}</div>
+            <div className={`w-full max-w-xs p-8 rounded-[40px] shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in zoom-in duration-300 border-4 flex flex-col relative ${currentAlertConf.bg} ${currentAlertConf.border}`}>
+              {alertQueue.length > 0 && ( <div className={`absolute -top-3 -right-3 bg-white w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shadow-lg animate-pulse border-2 ${currentAlertConf.text} ${currentAlertConf.border}`}>+{alertQueue.length}</div> )}
+              
+              {currentAlertConf.icon}
+              
+              <h2 className={`text-xl font-black uppercase mb-4 leading-tight ${currentAlertConf.text}`}>{activeAlert.title}</h2>
+              <div className={`font-bold mb-6 text-sm leading-tight whitespace-pre-wrap text-left p-4 rounded-xl border bg-black/10 border-black/20 ${currentAlertConf.text}`}>{activeAlert.body}</div>
+              
               <button 
                 onClick={() => { stopInfiniteAlarm(); setActiveAlert(null); }} 
-                className="w-full bg-red-950 text-red-400 py-4 rounded-2xl font-black text-lg uppercase shadow-xl tracking-widest active:scale-95 transition-transform active:bg-red-800 border border-red-800"
+                className={`w-full py-4 rounded-2xl font-black text-lg uppercase shadow-xl tracking-widest transition-opacity active:opacity-50 border border-black/30 ${currentAlertConf.btnBg} ${currentAlertConf.btnText}`}
               >
                 {alertQueue.length > 0 ? t('next') : t('understood')}
               </button>
