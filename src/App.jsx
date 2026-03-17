@@ -21,6 +21,16 @@ let app, authInstance, dbInstance;
 let isOfflineMode = true;
 try { app = initializeApp(firebaseConfig); authInstance = getAuth(app); dbInstance = getFirestore(app); isOfflineMode = false; } catch (error) { isOfflineMode = true; }
 
+// TRADUCTOR DE FECHAS RESTAURADO: Evita el colapso (Pantalla negra)
+const parseSafeDate = (val) => { 
+    if (!val) return null; 
+    try { 
+        if (typeof val === 'object' && val.seconds) return new Date(val.seconds * 1000); 
+        if (typeof val === 'number') return new Date(val); 
+        const d = new Date(val); return isNaN(d.getTime()) ? null : d; 
+    } catch (e) { return null; } 
+};
+
 const NativeAlarmsBridge = {
   setupChannel: async () => {
     if (window?.Capacitor?.Plugins?.LocalNotifications) {
@@ -259,7 +269,7 @@ const App = () => {
         if (rawData) {
             try {
                 const data = JSON.parse(rawData);
-                if (data.targetEndTime) setTargetEndTime(new Date(data.targetEndTime));
+                if (data.targetEndTime) setTargetEndTime(parseSafeDate(data.targetEndTime));
                 if (data.warAlarms) setWarAlarms(data.warAlarms);
                 if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
                 if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
@@ -288,7 +298,7 @@ const App = () => {
     const unsub = onSnapshot(docRef, (snap) => {
       if (snap.exists() && !isDraggingRef.current) { 
         const data = snap.data();
-        if (data.targetEndTime) setTargetEndTime(new Date(data.targetEndTime));
+        if (data.targetEndTime) setTargetEndTime(parseSafeDate(data.targetEndTime));
         if (data.warAlarms) setWarAlarms(data.warAlarms);
         if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
         if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
