@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">War Control</string>
+    <string name="title_activity_main">War Control</string>
+    <string name="package_name">com.warcontrol.app</string>
+    <string name="custom_url_scheme">com.warcontrol.app</string>
+</resources>
