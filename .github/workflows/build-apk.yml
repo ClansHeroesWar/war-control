@@ -1,10 +1,7 @@
 name: Compilar APK Android
-
 on: [workflow_dispatch]
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,8 +14,10 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Instalar Dependencias Web
-        run: npm install
+      - name: Instalar Dependencias Web y Nativas
+        run: |
+          npm install
+          npm install @capacitor/local-notifications
 
       - name: Compilar Producción Web (Vite)
         run: npm run build
