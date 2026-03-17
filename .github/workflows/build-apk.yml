@@ -2,6 +2,9 @@ name: Compilar APK Android
 
 on: [workflow_dispatch]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,6 +31,19 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '21'
+
+      - name: Arreglar conflicto Kotlin (Duplicate Class)
+        working-directory: ./android/app
+        run: |
+          cat <<EOF >> build.gradle
+          
+          configurations.all {
+              resolutionStrategy {
+                  exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+                  exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+              }
+          }
+          EOF
 
       - name: Conceder permisos de ejecución a Gradle
         working-directory: ./android
