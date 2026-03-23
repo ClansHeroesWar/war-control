@@ -1,33 +1,40 @@
+/*
+=============================================================================
+ATENCIÓN: Para que los botones "Cerrar" y "Reiniciar" de la notificación 
+funcionen en Android cuando la app está minimizada, DEBES crear un archivo 
+llamado "service-worker.js" en la raíz de tu proyecto con este código:
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  if (event.action === 'restart') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window' }).then(function(clientList) {
+        for (let i = 0; i < clientList.length; i++) {
+          let client = clientList[i];
+          if (client.url === '/' && 'focus' in client) {
+            client.postMessage({ action: 'restart_timer', tag: event.notification.tag });
+            return client.focus();
+          }
+        }
+      })
+    );
+  }
+});
+=============================================================================
+*/
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   ShieldAlert, RotateCcw, AlertTriangle, X, Minus, Plus,
   Pause, Play, Trash2, Edit2, Check, GripVertical, Smartphone,
   ArrowDownToLine, Volume2, Volume1, VolumeX,
-  BellRing, Music, ChevronDown, ChevronUp, Settings, Clock, Eye, Globe, Info,
-  Wifi, Cloud, CloudOff, Activity
+  BellRing, Music, ChevronDown, ChevronUp, Settings, Clock, Globe, Info
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// ==========================================
-// CREDENCIALES FIREBASE UNIFICADAS
-// ==========================================
-const firebaseConfig = {
-    apiKey: "AIzaSyB3o2kr0PBD-LXXO_loHH_lhbBd8SrH9Pc",
-    authDomain: "war-control-push.firebaseapp.com",
-    projectId: "war-control-push",
-    storageBucket: "war-control-push.firebasestorage.app",
-    messagingSenderId: "1074882873916",
-    appId: "1:1074882873916:web:24679bbdf9ce78f0329139"
-};
-
-const VAPID_KEY = "BBSuTkcsSNM2EDOuFwIx9sj9WVIO-B3teTIwD4nS7rOUkKl8v9SkzeZiadJMAgClf14-9-tAGrciC1rsfqINtvc";
-const APP_ID = 'war-control-pro';
-
-// DICCIONARIO DE IDIOMAS Y AYUDAS CONSOLIDADAS
 const dict = {
   en: {
     appTitle: "War Control",
@@ -72,11 +79,11 @@ const dict = {
     typeRelaxing: "Relaxing",
     typeSilent: "Silent",
     help_header_title: "Global Control Panel",
-    help_header_desc: "• Globe: Changes system language.\n• Eye: Prevents screen from turning off.\n• Volume: Quick toggle for system audio.\n• Smartphone: Advanced Push Notification controls.",
+    help_header_desc: "• Globe: Changes system language.\n• Volume: Quick toggle for system audio.\n• Music Note: Advanced acoustic profile settings.\n• Vibration: Toggles haptic feedback.\n• Smartphone: Local Android System Notifications.",
     help_time_title: "Strategic Time Module",
-    help_time_desc: "• End Time: Displays global target time.\n• Early Warnings: Select preset alerts before the global End Time.",
+    help_time_desc: "• End Time: Displays global target time.\n• Early Warnings: Select preset alerts (15M, 10M, 5M) before the global End Time.\n• H/M Inputs: Manually set global target time.\n• Sync: Applies input time to recalculate warnings.",
     help_creation_title: "Deployment Module",
-    help_creation_desc: "• Add Crono: Injects independent timers.\n• Create Section: Builds visual folders to group timers."
+    help_creation_desc: "• Add Crono: Injects independent timers to the field.\n• Create Section: Builds a visual folder to group multiple timers.\nNote: Timers can be dragged and dropped freely between sections."
   },
   es: {
     appTitle: "War Control",
@@ -121,28 +128,32 @@ const dict = {
     typeRelaxing: "Relajante",
     typeSilent: "Silencio",
     help_header_title: "Panel de Control Global",
-    help_header_desc: "• Globo: Cambia el idioma del sistema.\n• Ojo (Vigía): Evita que la pantalla se apague.\n• Volumen: Atajo rápido acústico.\n• Teléfono: Configuración del Sistema Push y Enlace.",
+    help_header_desc: "• Globo: Cambia el idioma del sistema.\n• Volumen: Atajo rápido de silencio.\n• Nota Musical: Configuración de sonido.\n• Vibración: Activa respuestas físicas táctiles.\n• Teléfono: Activa Notificaciones Nativas del Sistema Android.",
     help_time_title: "Módulo de Tiempo Estratégico",
-    help_time_desc: "• Hora Fin: Establece límite global.\n• Avisos Tempranos: Calcula alertas previas a la hora objetivo.",
+    help_time_desc: "• Hora Fin: Establece el límite global.\n• Avisos Tempranos: Calcula alertas automáticas.\n• Entradas H/M: Define horas/minutos para tu objetivo.\n• Sincronizar: Aplica el tiempo ingresado al sistema.",
     help_creation_title: "Módulo de Despliegue",
-    help_creation_desc: "• Añadir Crono: Inyecta cronómetros al campo.\n• Crear Sección: Contenedores para agrupar fases."
+    help_creation_desc: "• Añadir Crono: Inyecta cronómetros individuales al campo.\n• Crear Sección: Construye contenedores visuales para agrupar cronómetros en fases.\nNota: Usa el icono de los puntos para arrastrar cronos libremente."
   }
 };
 
-let app, authInstance, dbInstance, messagingInstance;
+const firebaseConfig = {
+    apiKey: "AIzaSyB3o2kr0PBD-LXXO_loHH_lhbBd8SrH9Pc",
+    authDomain: "war-control-push.firebaseapp.com",
+    projectId: "war-control-push",
+    storageBucket: "war-control-push.firebasestorage.app",
+    appId: "1:1074882873916:web:24679bbdf9ce78f0329139"
+};
+
+let app, authInstance, dbInstance;
 let isOfflineMode = true;
 
 try {
   app = initializeApp(firebaseConfig);
   authInstance = getAuth(app);
   dbInstance = getFirestore(app);
-  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      messagingInstance = getMessaging(app);
-  }
   isOfflineMode = false;
 } catch (error) {
   isOfflineMode = true;
-  console.warn("Firebase Init Failed. Offline mode active.");
 }
 
 let globalAudioCtx = null;
@@ -151,7 +162,9 @@ const initGlobalAudio = () => {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (AudioContext) globalAudioCtx = new AudioContext();
     }
-    if (globalAudioCtx && globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
+    if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+        globalAudioCtx.resume();
+    }
 };
 
 const VibrateIcon = ({ size = 24, className = "" }) => (
@@ -170,17 +183,11 @@ const COLORS = [
 ];
 
 const App = () => {
+  const appId = 'war-control-pro';
   const [lang, setLang] = useState('es');
   const t = (key) => dict[lang][key] || key;
 
   const [activeHelp, setActiveHelp] = useState(null);
-  const [showPushMenu, setShowPushMenu] = useState(false);
-
-  // ESTADOS PUSH / FIREBASE
-  const [pushPermission, setPushPermission] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'default');
-  const [pushToken, setPushToken] = useState('');
-  const [syncStatus, setSyncStatus] = useState('Desconectado');
-  const [actionLog, setActionLog] = useState([]);
 
   const SOUND_PROFILES = [
     { id: 'siren', name: t('soundSiren'), type: t('typeUrgent') },
@@ -196,7 +203,6 @@ const App = () => {
   ];
 
   const [user, setUser] = useState(null);
-  const [isLoaded, setIsLoaded] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const [targetEndTime, setTargetEndTime] = useState(null);
@@ -236,16 +242,16 @@ const App = () => {
 
   const [vibrateOn, setVibrateOn] = useState(false);
   const [soundProfile, setSoundProfile] = useState('siren'); 
+  const [sysNotifOn, setSysNotifOn] = useState(false);
+  
   const [warSound, setWarSound] = useState('siren');
   const [taskSound, setTaskSound] = useState('radar');
-  
-  const [wakeLockActive, setWakeLockActive] = useState(false);
-  const wakeLockRef = useRef(null);
 
   const tasksRef = useRef([]);
   const targetEndTimeRef = useRef(null);
   const warAlarmsRef = useRef([]);
   const vibrateOnRef = useRef(false);
+  const sysNotifOnRef = useRef(false);
   const warSoundRef = useRef('siren');
   const taskSoundRef = useRef('radar');
   const activeAlarmEngineRef = useRef(null); 
@@ -257,6 +263,7 @@ const App = () => {
   useEffect(() => { targetEndTimeRef.current = targetEndTime; }, [targetEndTime]);
   useEffect(() => { warAlarmsRef.current = warAlarms; }, [warAlarms]);
   useEffect(() => { vibrateOnRef.current = vibrateOn; }, [vibrateOn]);
+  useEffect(() => { sysNotifOnRef.current = sysNotifOn; }, [sysNotifOn]);
   useEffect(() => { warSoundRef.current = warSound; }, [warSound]);
   useEffect(() => { taskSoundRef.current = taskSound; }, [taskSound]);
 
@@ -271,126 +278,89 @@ const App = () => {
   const pointerPosRef = useRef({ x: 0, y: 0 });
   const autoScrollRafRef = useRef(null);
 
-  // ==========================================
-  // LÓGICA DE NOTIFICACIONES PUSH / ENGINE
-  // ==========================================
-  const addLog = useCallback((msg, type = 'info') => {
-    setActionLog(prev => [{ time: new Date().toLocaleTimeString(), msg, type }, ...prev].slice(0, 10));
-  }, []);
-
-  const autoRegisterToken = useCallback(async (uid) => {
-    if (!messagingInstance || !dbInstance) {
-        addLog("[SYS] Motor FCM o BD no disponibles.", "error");
+  // Lógica de Notificaciones de Sistema Android Nativas
+  const toggleSystemNotifications = async () => {
+    if (sysNotifOn) {
+        setSysNotifOn(false);
+        if (syncRef.current) syncRef.current({ sysNotifOn: false });
         return;
     }
-    try {
-      const currentToken = await getToken(messagingInstance, { vapidKey: VAPID_KEY });
-      if (currentToken) {
-        setPushToken(String(currentToken));
-        const tokenRef = doc(dbInstance, 'artifacts', APP_ID, 'public', 'data', 'tokens', currentToken);
-        await setDoc(tokenRef, {
-          token: String(currentToken),
-          owner_uid: String(uid),
-          device_info: String(navigator.userAgent),
-          last_seen: serverTimestamp(),
-          status: 'online'
-        }, { merge: true });
-        setSyncStatus('Conectado');
-        addLog("[FCM] Token registrado y enlazado.", "success");
-      } else {
-        addLog("[FCM] Imposible generar Token.", "error");
-      }
-    } catch (err) {
-      setSyncStatus('Error');
-      addLog(`[FCM] Error de registro: ${err.message}`, 'error');
-    }
-  }, [addLog]);
 
-  const handleRequestPushPermission = async () => {
     if (!('Notification' in window)) {
-        addLog("[SYS] Navegador no soporta notificaciones.", "error");
+        alert("Este navegador no soporta notificaciones de sistema.");
         return;
     }
-    try {
-        const status = await Notification.requestPermission();
-        setPushPermission(status);
-        if (status === 'granted') {
-            addLog(`[SYS] Permisos concedidos.`, 'success');
-            if (user) autoRegisterToken(user.uid);
-        } else {
-            addLog(`[SYS] Permisos denegados por el usuario.`, 'error');
+
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+        setSysNotifOn(true);
+        if (syncRef.current) syncRef.current({ sysNotifOn: true });
+        
+        // Registrar Service Worker silenciosamente para habilitar acciones en notificaciones
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js').catch(err => {
+                console.log("Service Worker no registrado (Las acciones nativas no funcionarán minimizadas).", err);
+            });
         }
-    } catch(e) {
-        addLog(`[SYS] Error al pedir permisos: ${e.message}`, 'error');
     }
   };
 
-  // El disparador maestro de notificaciones Locales/Service Worker
-  const triggerLocalPushNotification = useCallback(async (title, body) => {
-    if (pushPermission !== 'granted') return;
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        if (regs.length > 0) {
-          // Usamos el SW para garantizar que si la app está en bg, se muestre de manera nativa
-          await regs[0].showNotification(String(title), {
-            body: String(body),
-            icon: '/vite.svg', // Idealmente cambia esto por una URL absoluta a tu logo
-            vibrate: [500, 200, 500, 200, 500],
-            requireInteraction: true,
-            badge: '/vite.svg'
-          });
-          addLog(`[PUSH] Disparada vía SW: ${title}`, 'success');
-          return;
-        }
-      }
-      // Fallback a API básica
-      new Notification(String(title), { body: String(body), requireInteraction: true });
-      addLog(`[PUSH] Disparada vía Fallback: ${title}`, 'warning');
-    } catch (e) {
-      addLog(`[PUSH] Error al invocar notificación nativa: ${e.message}`, 'error');
-    }
-  }, [pushPermission, addLog]);
+  const sendAndroidNotification = async (title, body, tag, taskId = null) => {
+      if (!sysNotifOnRef.current || Notification.permission !== 'granted') return;
 
-  // ==========================================
-  // INICIALIZACIÓN Y WORKERS (El motor core no se toca)
-  // ==========================================
+      const options = {
+          body: body,
+          icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+          badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+          vibrate: [500, 200, 500],
+          tag: tag,
+          renotify: true,
+          requireInteraction: true,
+          actions: taskId ? [
+              { action: 'close', title: 'Cerrar' },
+              { action: 'restart', title: 'Reiniciar' }
+          ] : []
+      };
+
+      try {
+          if ('serviceWorker' in navigator) {
+              const reg = await navigator.serviceWorker.getRegistration();
+              if (reg) {
+                  await reg.showNotification(title, options);
+                  return;
+              }
+          }
+          // Fallback nativo
+          new Notification(title, { body, tag });
+      } catch (e) {
+          console.error("Fallo al enviar notificación:", e);
+      }
+  };
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handleSWMessage = (event) => {
+        if (event.data && event.data.action === 'restart_timer') {
+            const taskIdStr = event.data.tag.split('_')[1];
+            const taskId = parseInt(taskIdStr, 10);
+            if (!isNaN(taskId)) {
+                setTasks(prev => {
+                    const nl = prev.map(x => x.id === taskId ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x);
+                    if(syncRef.current) syncRef.current({ tasks: nl });
+                    return nl;
+                });
+            }
+        }
+    };
+    navigator.serviceWorker.addEventListener('message', handleSWMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+  }, []);
 
   const toggleLanguage = () => {
       const nextLang = lang === 'en' ? 'es' : 'en';
       setLang(nextLang);
       if (syncRef.current) syncRef.current({ language: nextLang });
   };
-
-  const toggleWakeLock = async () => {
-    if (!('wakeLock' in navigator)) {
-      setAlertQueue(prev => [...prev, { title: "API NO SOPORTADA", body: "Tu navegador no soporta el bloqueo de pantalla.", type: "task" }]);
-      return;
-    }
-    try {
-      if (wakeLockActive && wakeLockRef.current) {
-        await wakeLockRef.current.release();
-        wakeLockRef.current = null;
-        setWakeLockActive(false);
-      } else {
-        wakeLockRef.current = await navigator.wakeLock.request('screen');
-        setWakeLockActive(true);
-        wakeLockRef.current.addEventListener('release', () => { setWakeLockActive(false); });
-      }
-    } catch (err) {
-      setWakeLockActive(false);
-    }
-  };
-
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (wakeLockRef.current !== null && document.visibilityState === 'visible') {
-        try { wakeLockRef.current = await navigator.wakeLock.request('screen'); setWakeLockActive(true); } catch (err) { setWakeLockActive(false); }
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
 
   const triggerHaptic = useCallback((pattern) => {
     if (!navigator.vibrate) return;
@@ -527,6 +497,7 @@ const App = () => {
                 if (data.targetEndTime) setTargetEndTime(new Date(data.targetEndTime));
                 if (data.warAlarms) setWarAlarms(data.warAlarms);
                 if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
+                if (data.sysNotifOn !== undefined) setSysNotifOn(data.sysNotifOn);
                 if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
                 if (data.warSound) setWarSound(data.warSound);
                 if (data.taskSound) setTaskSound(data.taskSound);
@@ -544,54 +515,27 @@ const App = () => {
                 }
             } catch(e) {}
         }
-        setIsLoaded(true);
         return;
     }
 
     const initAuth = async () => {
       if (authInstance) {
-          try { 
-              await signInAnonymously(authInstance); 
-              onAuthStateChanged(authInstance, (currentUser) => {
-                  setUser(currentUser);
-                  // Auto-registrar si ya tiene permisos dados previamente
-                  if (currentUser && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                      autoRegisterToken(currentUser.uid);
-                  }
-              }); 
-          } catch(e) {
-              addLog(`[AUTH] Fallo: ${e.message}`, 'error');
-          }
+          try { await signInAnonymously(authInstance); onAuthStateChanged(authInstance, setUser); } catch(e) {}
       }
     };
     initAuth();
-  }, [autoRegisterToken]);
-
-  // Listener para mensajes Push entrantes de servidor
-  useEffect(() => {
-    let unsubscribeMsg = () => {};
-    if (messagingInstance) {
-      unsubscribeMsg = onMessage(messagingInstance, (payload) => {
-        addLog(`[FCM] Comando Remoto Recibido.`, 'warning');
-        setAlertQueue(prev => [...prev, { 
-            title: payload.notification?.title || "ALERTA REMOTA", 
-            body: payload.notification?.body || "Mensaje del servidor", 
-            type: "war" 
-        }]);
-      });
-    }
-    return () => unsubscribeMsg();
   }, []);
 
   useEffect(() => {
     if (isOfflineMode || !user || !dbInstance) return;
-    const docRef = doc(dbInstance, 'artifacts', APP_ID, 'users', user.uid, 'settings', 'global_data_v45');
+    const docRef = doc(dbInstance, 'artifacts', appId, 'users', user.uid, 'settings', 'global_data_v45');
     const unsub = onSnapshot(docRef, (snap) => {
       if (snap.exists() && !isDraggingRef.current) { 
         const data = snap.data();
         if (data.targetEndTime) setTargetEndTime(new Date(data.targetEndTime));
         if (data.warAlarms) setWarAlarms(data.warAlarms);
         if (data.vibrateOn !== undefined) setVibrateOn(data.vibrateOn);
+        if (data.sysNotifOn !== undefined) setSysNotifOn(data.sysNotifOn);
         if (data.soundProfile !== undefined) setSoundProfile(data.soundProfile);
         if (data.warSound) setWarSound(data.warSound);
         if (data.taskSound) setTaskSound(data.taskSound);
@@ -608,7 +552,6 @@ const App = () => {
           })));
         }
       }
-      setIsLoaded(true);
     });
     return () => unsub();
   }, [user]);
@@ -620,7 +563,7 @@ const App = () => {
         return;
     }
     if (!user || !dbInstance) return;
-    const docRef = doc(dbInstance, 'artifacts', APP_ID, 'users', user.uid, 'settings', 'global_data_v45');
+    const docRef = doc(dbInstance, 'artifacts', appId, 'users', user.uid, 'settings', 'global_data_v45');
     await setDoc(docRef, updates, { merge: true });
   };
 
@@ -639,106 +582,98 @@ const App = () => {
     if (!activeAlert && alertQueue.length === 0) stopInfiniteAlarm();
   }, [activeAlert, alertQueue, stopInfiniteAlarm]);
 
+  // ==========================================
+  // MOTOR DE RELOJ RECTIFICADO (NATIVO, SIN WORKER PARA EVITAR CONGELAMIENTO)
+  // ==========================================
   useEffect(() => {
-    const clock = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(clock);
-  }, []);
+    const ticker = setInterval(() => {
+        if (isDraggingRef.current) return;
 
-  // MOTOR CENTRAL: WORKER TICKER
-  useEffect(() => {
-    const workerCode = `
-      let timer = null;
-      self.onmessage = function(e) {
-        if (e.data === 'start') {
-          if (timer) clearInterval(timer);
-          timer = setInterval(() => self.postMessage('tick'), 1000);
-        } else if (e.data === 'stop') {
-          clearInterval(timer);
+        const now = Date.now();
+        setCurrentTime(new Date(now));
+
+        let changedTasks = false;
+        let hasNewFinishedTasks = false;
+        let finishedLabels = [];
+        let finishedTaskIds = [];
+
+        const nextTasks = tasksRef.current.map(t => {
+            if (t.isRunning && t.serverEndTime) {
+                const exactRemaining = Math.max(0, Math.floor((t.serverEndTime - now) / 1000));
+                
+                // CONDICIÓN ESTRICTA: Evita la repetición destructiva borrando serverEndTime al finalizar
+                if (exactRemaining === 0 && !t.alerted) {
+                    changedTasks = true;
+                    hasNewFinishedTasks = true;
+                    finishedLabels.push(t.label);
+                    finishedTaskIds.push(t.id);
+                    return { ...t, remainingSeconds: 0, isNewFinish: true, alerted: true, isRunning: false, serverEndTime: null };
+                }
+                
+                if (exactRemaining !== t.remainingSeconds && exactRemaining > 0) {
+                    changedTasks = true;
+                    return { ...t, remainingSeconds: exactRemaining };
+                }
+            }
+            return t;
+        });
+
+        let newlyTriggeredAlarms = [];
+        let nextAlarms = [...warAlarmsRef.current];
+        
+        if (targetEndTimeRef.current) {
+            const msRem = targetEndTimeRef.current.getTime() - now;
+            if (msRem < 86400000 && msRem > -86400000) { 
+                warAlarmsRef.current.forEach(a => {
+                    if (a.on && !a.trig) {
+                        let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
+                        let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
+                        if (limitMs > 0 && msRem <= limitMs) newlyTriggeredAlarms.push(a);
+                    }
+                });
+            }
         }
-      };
-    `;
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(blob);
-    const tickerWorker = new Worker(workerUrl);
 
-    tickerWorker.onmessage = () => {
-      if (isDraggingRef.current) return; 
+        if (finishedLabels.length > 0 || newlyTriggeredAlarms.length > 0) {
+            let alertTitle = ""; let notifBody = "";
 
-      const now = Date.now();
-      let changedTasks = false;
-      let hasNewFinishedTasks = false;
-      let finishedLabels = [];
+            if (finishedLabels.length > 0) {
+                alertTitle = t('taskFinished');
+                notifBody = finishedLabels.map(l => `• ${l}`).join('\n');
+                
+                finishedLabels.forEach((label, idx) => {
+                    sendAndroidNotification(
+                        `${label}, ¡Completado!`, 
+                        "Toca Reiniciar para volver a activarlo.", 
+                        `task_${finishedTaskIds[idx]}`,
+                        finishedTaskIds[idx]
+                    );
+                });
+            }
 
-      const nextTasks = tasksRef.current.map(t => {
-        if (t.isRunning && t.serverEndTime) {
-          const exactRemaining = Math.max(0, Math.floor((t.serverEndTime - now) / 1000));
-          
-          if (exactRemaining === 0 && !t.alerted) {
-              changedTasks = true;
-              hasNewFinishedTasks = true;
-              finishedLabels.push(t.label);
-              return { ...t, remainingSeconds: 0, isNewFinish: true, alerted: true, isRunning: false };
-          }
-          
-          if (exactRemaining !== t.remainingSeconds && exactRemaining > 0) {
-              changedTasks = true;
-              return { ...t, remainingSeconds: exactRemaining };
-          }
+            if (newlyTriggeredAlarms.length > 0) {
+                const alarmLabels = newlyTriggeredAlarms.map(a => a.custom ? `Faltan ${a.h ? a.h+'h ' : ''}${a.m ? a.m+'m ' : ''}${a.s ? a.s+'s' : ''}`.trim() : `Faltan ${a.mins} Minutos`).join('\n• ');
+                if (notifBody) { notifBody += `\n\n${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
+                else { alertTitle = t('earlyWarnings'); notifBody = `• ${alarmLabels}`; }
+
+                sendAndroidNotification("Aviso Temprano", alarmLabels, "war_alarm");
+
+                nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
+                setWarAlarms(nextAlarms); if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
+            }
+            
+            const alertType = newlyTriggeredAlarms.length > 0 && finishedLabels.length === 0 ? 'war' : 'task';
+            setAlertQueue(prev => [...prev, { title: alertTitle, body: notifBody, type: alertType }]);
         }
-        return t;
-      });
 
-      let newlyTriggeredAlarms = [];
-      let nextAlarms = [...warAlarmsRef.current];
-      
-      if (targetEndTimeRef.current) {
-          const msRem = targetEndTimeRef.current.getTime() - now;
-          if (msRem < 86400000 && msRem > -86400000) { 
-              warAlarmsRef.current.forEach(a => {
-                  if (a.on && !a.trig) {
-                      let h = parseInt(a.h) || 0; let m = parseInt(a.m) || 0; let s = parseInt(a.s) || 0;
-                      let limitMs = a.custom ? ((h * 3600) + (m * 60) + s) * 1000 : a.mins * 60000;
-                      if (limitMs > 0 && msRem <= limitMs) newlyTriggeredAlarms.push(a);
-                  }
-              });
-          }
-      }
+        if (changedTasks) {
+            setTasks(nextTasks);
+            if (hasNewFinishedTasks && syncRef.current) syncRef.current({ tasks: nextTasks });
+        }
+    }, 1000);
 
-      // INTEGRACIÓN: Disparo de Alertas + Disparo Notificación Push Local
-      if (finishedLabels.length > 0 || newlyTriggeredAlarms.length > 0) {
-          let alertTitle = ""; let notifBody = "";
-
-          if (finishedLabels.length > 0) {
-              alertTitle = t('taskFinished');
-              notifBody = finishedLabels.map(l => `• ${l}`).join('\n');
-              // DISPARAR PUSH NATIVA DEL DISPOSITIVO
-              triggerLocalPushNotification(alertTitle, notifBody);
-          }
-
-          if (newlyTriggeredAlarms.length > 0) {
-              const alarmLabels = newlyTriggeredAlarms.map(a => a.custom ? `Faltan ${a.h ? a.h+'h ' : ''}${a.m ? a.m+'m ' : ''}${a.s ? a.s+'s' : ''}`.trim() : `Faltan ${a.mins} Minutos`).join('\n• ');
-              if (notifBody) { notifBody += `\n\n${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
-              else { 
-                  alertTitle = t('earlyWarnings'); 
-                  notifBody = `• ${alarmLabels}`; 
-                  triggerLocalPushNotification(alertTitle, notifBody);
-              }
-
-              nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
-              setWarAlarms(nextAlarms); if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
-          }
-          
-          const alertType = newlyTriggeredAlarms.length > 0 && finishedLabels.length === 0 ? 'war' : 'task';
-          setAlertQueue(prev => [...prev, { title: alertTitle, body: notifBody, type: alertType }]);
-      }
-
-      if (changedTasks) setTasks(nextTasks);
-      if (hasNewFinishedTasks && syncRef.current) syncRef.current({ tasks: nextTasks });
-    };
-
-    tickerWorker.postMessage('start');
-    return () => { tickerWorker.postMessage('stop'); tickerWorker.terminate(); URL.revokeObjectURL(workerUrl); };
-  }, [t, triggerLocalPushNotification]); // Agregado trigger local push
+    return () => clearInterval(ticker);
+  }, [t]);
 
   const handleNum = (setter) => (e) => {
     let v = e.target.value.replace(/\D/g, '');
@@ -879,9 +814,6 @@ const App = () => {
     setBoxes(nb); if(syncRef.current) syncRef.current({ boxes: nb });
   };
 
-  // ==========================================
-  // DRAG AND DROP (INTOCABLE - CIRUJANO MODE)
-  // ==========================================
   const handleItemPointerDown = (e, id, type) => {
     if (e.target.closest('button') || e.target.closest('input')) return;
     if (pendingDragRef.current || isDraggingRef.current) return; 
@@ -1035,6 +967,8 @@ const App = () => {
   };
 
   const dismissNewFinish = (id) => {
+      // isNewFinish controla solo la alerta visual (rojo titilante/visto)
+      // No debe afectar 'alerted' (que previene la repetición de sonidos/push)
       const nl = tasks.map(x => x.id === id ? { ...x, isNewFinish: false } : x);
       setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl });
   };
@@ -1127,7 +1061,6 @@ const App = () => {
         input { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
       `}</style>
 
-      {/* MODAL DE AYUDA GLOBAL CONSOLIDADA */}
       {activeHelp && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setActiveHelp(null)}>
           <div className="bg-zinc-900 border border-blue-500 p-6 rounded-3xl max-w-sm w-full relative shadow-[0_0_40px_rgba(59,130,246,0.3)] animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
@@ -1143,62 +1076,6 @@ const App = () => {
           </div>
         </div>
       )}
-
-      {/* MODAL SISTEMA PUSH (DIAGNÓSTICO Y PERMISOS) */}
-      {showPushMenu && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowPushMenu(false)}>
-          <div className="bg-zinc-950 border border-blue-500 p-6 rounded-3xl max-w-md w-full relative shadow-[0_0_40px_rgba(59,130,246,0.3)] flex flex-col" onClick={e => e.stopPropagation()}>
-             <button onClick={() => setShowPushMenu(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={20}/></button>
-             
-             <div className="flex items-center gap-3 mb-6 text-blue-400 border-b border-zinc-800 pb-4">
-               <Smartphone size={24} />
-               <h3 className="font-black uppercase text-lg leading-tight tracking-widest">Sistema Push</h3>
-             </div>
-
-             <div className="space-y-4 mb-6">
-                <div className="bg-zinc-900 p-4 rounded-xl flex items-center justify-between border border-zinc-800">
-                  <div className="flex items-center gap-2">
-                    {pushPermission === 'granted' ? <Cloud className="text-emerald-500" size={16}/> : <CloudOff className="text-red-500" size={16}/>}
-                    <span className="text-xs font-bold text-zinc-400 uppercase">Estado Enlace</span>
-                  </div>
-                  <span className={`text-[10px] font-mono uppercase ${pushPermission === 'granted' ? 'text-emerald-500' : 'text-red-500'}`}>{syncStatus}</span>
-                </div>
-
-                {pushPermission !== 'granted' && (
-                  <button onClick={handleRequestPushPermission} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-black text-xs uppercase transition-colors shadow-lg active:scale-95">
-                    Habilitar Notificaciones Locales
-                  </button>
-                )}
-             </div>
-
-             <div className="bg-black border border-zinc-800/50 rounded-xl p-3 shadow-inner">
-                <div className="flex items-center gap-2 mb-2 border-b border-zinc-800 pb-2">
-                  <Activity className="w-3 h-3 text-zinc-500" />
-                  <h3 className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Log de Disparo Push</h3>
-                </div>
-                <div className="space-y-2 font-mono text-[9px] h-24 overflow-y-auto">
-                  {actionLog.length === 0 ? (
-                    <p className="text-zinc-600 text-center italic mt-6">Esperando eventos SW...</p>
-                  ) : (
-                    actionLog.map((log, i) => (
-                      <div key={i} className="flex gap-2 leading-tight">
-                        <span className="text-zinc-600 shrink-0">{log.time}</span>
-                        <span className={`${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-emerald-400' : log.type === 'warning' ? 'text-amber-400' : 'text-blue-400'}`}>
-                          {log.msg}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-             </div>
-          </div>
-        </div>
-      )}
-
-      {/* AUDIO INVISIBLE PARA MANTENER ACTIVO IOS/ANDROID */}
-      <audio id="silent-audio-hack" loop autoPlay playsInline style={{display: 'none'}}>
-          <source src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vr6+vwAAABMYXZjNTkuMzcuMTAwAAAAAAAAAAAAAAAAJAAAAAAAAAAAScCAgP/zhAAAAAAAAAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV" type="audio/mpeg" />
-      </audio>
 
       {dragState.isDragging && (
           <div className="fixed z-[9999] pointer-events-none is-ghost shadow-[0_20px_50px_rgba(245,158,11,0.5)] border-2 border-amber-500 rounded-xl bg-zinc-900/95 px-4 py-3 backdrop-blur" style={{ left: dragState.pos.x - 70, top: dragState.pos.y - 30 }}>
@@ -1264,21 +1141,20 @@ const App = () => {
           </div>
           
           <div className="flex gap-1">
-            <button onClick={toggleWakeLock} className={`p-1.5 rounded-lg border transition-colors ${wakeLockActive ? 'bg-blue-600 text-white border-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><Eye size={18} /></button>
             <button onClick={toggleSoundProfile} className={`p-1.5 rounded-lg border transition-colors ${soundProfile !== 'muted' ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>{soundProfile === 'siren' ? <Volume2 size={18}/> : soundProfile === 'radar' ? <Volume1 size={18}/> : <VolumeX size={18}/>}</button>
             <button onClick={() => setShowSoundMenu(true)} className="p-1.5 bg-zinc-800 text-amber-500 border border-zinc-700 rounded-lg shadow-lg hover:bg-zinc-700 transition-colors"><Music size={18}/></button>
             <button onClick={() => { const next = !vibrateOn; setVibrateOn(next); if(!next) stopInfiniteAlarm(); if(syncRef.current) syncRef.current({ vibrateOn: next }); }} className={`p-1.5 rounded-lg border transition-colors ${vibrateOn ? 'bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-900/40' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}><VibrateIcon size={18}/></button>
-            <button onClick={() => setShowPushMenu(true)} className={`p-1.5 rounded-lg border transition-colors relative ${pushPermission === 'granted' ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500/50' : 'bg-zinc-800 text-zinc-500 border-zinc-700 hover:text-white'}`}>
+            
+            <button onClick={toggleSystemNotifications} className={`p-1.5 rounded-lg border transition-colors ${sysNotifOn ? 'bg-emerald-600 text-white border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>
                 <Smartphone size={18}/>
-                {pushPermission === 'granted' && <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-black animate-pulse"></div>}
             </button>
           </div>
         </div>
 
         <div className="flex justify-center items-center mb-4">
-            <div className={`border rounded-full px-5 py-2 shadow-lg flex items-center gap-3 backdrop-blur-sm whitespace-nowrap transition-colors duration-500 ${wakeLockActive ? 'bg-blue-900/20 border-blue-500/50 shadow-[0_0_20px_rgba(37,99,235,0.15)]' : 'bg-zinc-900/80 border-zinc-700/50'}`}>
-                <Clock className={wakeLockActive ? 'text-blue-500 shrink-0' : 'text-amber-500 shrink-0'} size={16} />
-                <div className="flex items-baseline gap-1.5"><span className="text-3xl font-mono font-light text-white tracking-widest leading-none">{currentFormatted.time}</span><span className={`text-sm font-black uppercase tracking-wider ${wakeLockActive ? 'text-blue-300' : 'text-zinc-400'}`}>{currentFormatted.ampm}</span></div>
+            <div className={`border rounded-full px-5 py-2 shadow-lg flex items-center gap-3 backdrop-blur-sm whitespace-nowrap transition-colors duration-500 bg-zinc-900/80 border-zinc-700/50`}>
+                <Clock className="text-amber-500 shrink-0" size={16} />
+                <div className="flex items-baseline gap-1.5"><span className="text-3xl font-mono font-light text-white tracking-widest leading-none">{currentFormatted.time}</span><span className="text-sm font-black uppercase tracking-wider text-zinc-400">{currentFormatted.ampm}</span></div>
             </div>
         </div>
 
