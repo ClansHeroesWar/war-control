@@ -261,86 +261,75 @@ const App = () => {
   // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO
   // =========================================================================
   
-  // 1. Iniciar el Foreground Service
-  useEffect(() => {
+// Iniciar el Foreground Service (Reloj persistente en barra de Android)
+useEffect(() => {
     const initForegroundService = async () => {
       try {
         await ForegroundService.startForegroundService({
           id: 1234,
-          title: '⚔️ War Control',
+          title: '⚔ War Control', // O directamente '⚔ (U+2694) War Control'
           body: 'Estableciendo conexión operativa...',
-          smallIcon: 'ic_lock_idle_alarm' // Icono interno de Android obligatorio para evitar colapsos
+          smallIcon: 'ic_lock_idle_alarm' // Esto es lo único que dibuja en la barra superior
         });
       } catch (error) {
         console.log("Error iniciando Foreground Service nativo:", error);
       }
     };
 
-    const requestPerms = async () => {
-        try { await LocalNotifications.requestPermissions(); } catch(e) {}
-    };
-
-    requestPerms();
-    initForegroundService();
-  }, []);
-
-  // 2. Actualizar el Foreground Service con el conteo en vivo (SIN USAR updateForegroundService)
-  const lastTickRef = useRef(0);
+    // Solicitar permisos de notificación obligatorios en Android 13+
+    // 1. Inicialización Defensiva
   useEffect(() => {
-      const now = Date.now();
-      // Refresco cada ~1 segundo para no saturar el puente nativo
-      if (now - lastTickRef.current < 900) return;
-      lastTickRef.current = now;
+    const initializeSystem = async () => {
+      try {
+        // PASO 1: Pedir permisos de notificación de forma segura y ESPERAR
+        if (typeof Notification !== 'undefined') {
+            const permStatus = await Notification.requestPermission();
+            if (permStatus === 'granted') {
+                setSysNotifOn(true);
+                if (syncRef.current) syncRef.current({ sysNotifOn: true });
+            }
+        }
 
-      if (targetEndTime) {
-          const d = targetEndTime.getTime() - currentTime.getTime();
-          if (d > 0) {
-              const h = Math.floor(d/3600000);
-              const m = Math.floor((d%3600000)/60000);
-              const s = Math.floor((d%60000)/1000);
-              const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-              
-              // Volver a llamar startForegroundService con el mismo ID actualiza la notificación nativamente
-              ForegroundService.startForegroundService({
-                  id: 1234,
-                  title: '⚔️ Guerra Activa',
-                  body: `Tiempo restante: ${timeStr}`,
-                  smallIcon: 'ic_lock_idle_alarm'
-              }).catch(()=>{});
-          } else {
-              ForegroundService.startForegroundService({
+        try {
+            // Intentamos pedir permisos nativos también
+            await LocalNotifications.requestPermissions();
+        } catch (e) {
+            console.log("Error silencioso pidiendo permisos nativos:", e);
+        }
+
+        // PASO 2: Solo si tenemos el permiso interno, intentamos arrancar el servicio
+        if (sysNotifOnRef.current) {
+            try {
+                await ForegroundService.startForegroundService({
                   id: 1234,
                   title: 'War Control',
-                  body: `La Guerra ha finalizado.`,
-                  smallIcon: 'ic_lock_idle_alarm'
-              }).catch(()=>{});
-          }
-      } else {
-          ForegroundService.startForegroundService({
-              id: 1234,
-              title: 'War Control',
-              body: `Esperando órdenes...`,
-              smallIcon: 'ic_lock_idle_alarm'
-          }).catch(()=>{});
+                  body: 'Sistema activo.',
+                  // Eliminamos el smallIcon temporalmente para ver si esa es la causa del crash. 
+                  // Capacitor debería usar el icono de la app por defecto.
+                });
+            } catch (serviceError) {
+                console.error("El Foreground Service falló al iniciar, pero la app no debe cerrarse:", serviceError);
+            }
+        }
+      } catch (generalError) {
+         console.error("Error crítico en la inicialización:", generalError);
       }
-  }, [currentTime, targetEndTime]);
+    };
 
-  // 3. Programar alarma exacta nativa (Con parche de seguridad de 32-bits)
+    initializeSystem();
+  }, []);
+
+  // Programar alarma exacta con el sistema Android
   const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
       if (!sysNotifOnRef.current) return;
-      
-      // PARCHE CRÍTICO: Capacitor requiere IDs enteros de 32-bits.
-      // Convertimos el ID (Date.now) en un número seguro para Java.
-      const safeId = Number(id) % 2147483647; 
-      
       try {
           await LocalNotifications.schedule({
               notifications: [
                   {
                       title: title,
                       body: body,
-                      id: safeId, 
-                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, 
+                      id: id,
+                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, // allowWhileIdle permite saltar el reposo de Android
                       sound: null,
                       actionTypeId: "",
                       extra: null
@@ -352,11 +341,10 @@ const App = () => {
       }
   };
 
-  // 4. Cancelar alarma nativa
+  // Cancelar alarma en el sistema Android si se pausa/elimina
   const cancelNativeAlarm = async (id) => {
-      const safeId = Number(id) % 2147483647;
       try { 
-          await LocalNotifications.cancel({ notifications: [{ id: safeId }] }); 
+          await LocalNotifications.cancel({ notifications: [{ id: id }] }); 
       } catch (e) { 
           console.error("Error cancelando alarma nativa:", e); 
       }
@@ -380,33 +368,6 @@ const App = () => {
     } catch(err) {
         console.log(err);
     }
-  };
-
-  // Disparo inmediato de notificaciones web (Fallback)
-  const sendImmediateWebNotification = async (title, body, tag, taskId = null) => {
-      if (!sysNotifOnRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-
-      const options = {
-          body: body,
-          icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
-          badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
-          vibrate: [500, 200, 500],
-          tag: tag,
-          renotify: true,
-          requireInteraction: true,
-          actions: taskId ? [
-              { action: 'close', title: 'Cerrar' },
-              { action: 'restart', title: 'Reiniciar' }
-          ] : []
-      };
-
-      try {
-          if ('serviceWorker' in navigator) {
-              const reg = await navigator.serviceWorker.getRegistration();
-              if (reg) { await reg.showNotification(title, options); return; }
-          }
-          new Notification(title, { body, tag });
-      } catch (e) { console.error("Fallo al enviar notificación:", e); }
   };
 
   // =========================================================================
