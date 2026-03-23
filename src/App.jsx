@@ -261,43 +261,86 @@ const App = () => {
   // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO
   // =========================================================================
   
-  // Iniciar el Foreground Service (Reloj persistente en barra de Android)
+  // 1. Iniciar el Foreground Service
   useEffect(() => {
     const initForegroundService = async () => {
       try {
         await ForegroundService.startForegroundService({
           id: 1234,
-          title: 'War Control Activo',
-          body: 'Monitoreando cronómetros en segundo plano',
-          smallIcon: 'ic_stat_icon_config_sample' // Cambiado al icono seguro por defecto de Capacitor
+          title: '⚔️ War Control',
+          body: 'Estableciendo conexión operativa...',
+          smallIcon: 'ic_lock_idle_alarm' // Icono interno de Android obligatorio para evitar colapsos
         });
       } catch (error) {
         console.log("Error iniciando Foreground Service nativo:", error);
       }
     };
 
-    // Solicitar permisos de notificación obligatorios en Android 13+
     const requestPerms = async () => {
-        try {
-            await LocalNotifications.requestPermissions();
-        } catch(e) {}
+        try { await LocalNotifications.requestPermissions(); } catch(e) {}
     };
 
     requestPerms();
     initForegroundService();
   }, []);
 
-  // Programar alarma exacta con el sistema Android
+  // 2. Actualizar el Foreground Service con el conteo en vivo (SIN USAR updateForegroundService)
+  const lastTickRef = useRef(0);
+  useEffect(() => {
+      const now = Date.now();
+      // Refresco cada ~1 segundo para no saturar el puente nativo
+      if (now - lastTickRef.current < 900) return;
+      lastTickRef.current = now;
+
+      if (targetEndTime) {
+          const d = targetEndTime.getTime() - currentTime.getTime();
+          if (d > 0) {
+              const h = Math.floor(d/3600000);
+              const m = Math.floor((d%3600000)/60000);
+              const s = Math.floor((d%60000)/1000);
+              const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+              
+              // Volver a llamar startForegroundService con el mismo ID actualiza la notificación nativamente
+              ForegroundService.startForegroundService({
+                  id: 1234,
+                  title: '⚔️ Guerra Activa',
+                  body: `Tiempo restante: ${timeStr}`,
+                  smallIcon: 'ic_lock_idle_alarm'
+              }).catch(()=>{});
+          } else {
+              ForegroundService.startForegroundService({
+                  id: 1234,
+                  title: 'War Control',
+                  body: `La Guerra ha finalizado.`,
+                  smallIcon: 'ic_lock_idle_alarm'
+              }).catch(()=>{});
+          }
+      } else {
+          ForegroundService.startForegroundService({
+              id: 1234,
+              title: 'War Control',
+              body: `Esperando órdenes...`,
+              smallIcon: 'ic_lock_idle_alarm'
+          }).catch(()=>{});
+      }
+  }, [currentTime, targetEndTime]);
+
+  // 3. Programar alarma exacta nativa (Con parche de seguridad de 32-bits)
   const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
       if (!sysNotifOnRef.current) return;
+      
+      // PARCHE CRÍTICO: Capacitor requiere IDs enteros de 32-bits.
+      // Convertimos el ID (Date.now) en un número seguro para Java.
+      const safeId = Number(id) % 2147483647; 
+      
       try {
           await LocalNotifications.schedule({
               notifications: [
                   {
                       title: title,
                       body: body,
-                      id: id,
-                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, // allowWhileIdle permite saltar el reposo
+                      id: safeId, 
+                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, 
                       sound: null,
                       actionTypeId: "",
                       extra: null
@@ -309,10 +352,11 @@ const App = () => {
       }
   };
 
-  // Cancelar alarma en el sistema Android si se pausa/elimina
+  // 4. Cancelar alarma nativa
   const cancelNativeAlarm = async (id) => {
+      const safeId = Number(id) % 2147483647;
       try { 
-          await LocalNotifications.cancel({ notifications: [{ id: id }] }); 
+          await LocalNotifications.cancel({ notifications: [{ id: safeId }] }); 
       } catch (e) { 
           console.error("Error cancelando alarma nativa:", e); 
       }
@@ -336,6 +380,33 @@ const App = () => {
     } catch(err) {
         console.log(err);
     }
+  };
+
+  // Disparo inmediato de notificaciones web (Fallback)
+  const sendImmediateWebNotification = async (title, body, tag, taskId = null) => {
+      if (!sysNotifOnRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+      const options = {
+          body: body,
+          icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+          badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+          vibrate: [500, 200, 500],
+          tag: tag,
+          renotify: true,
+          requireInteraction: true,
+          actions: taskId ? [
+              { action: 'close', title: 'Cerrar' },
+              { action: 'restart', title: 'Reiniciar' }
+          ] : []
+      };
+
+      try {
+          if ('serviceWorker' in navigator) {
+              const reg = await navigator.serviceWorker.getRegistration();
+              if (reg) { await reg.showNotification(title, options); return; }
+          }
+          new Notification(title, { body, tag });
+      } catch (e) { console.error("Fallo al enviar notificación:", e); }
   };
 
   // =========================================================================
