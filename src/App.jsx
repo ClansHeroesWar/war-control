@@ -1,28 +1,3 @@
-/*
-=============================================================================
-ATENCIÓN: Para que los botones "Cerrar" y "Reiniciar" de la notificación 
-funcionen en Android cuando la app está minimizada, DEBES crear un archivo 
-llamado "service-worker.js" en la raíz de tu proyecto con este código:
-
-self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
-  if (event.action === 'restart') {
-    event.waitUntil(
-      self.clients.matchAll({ type: 'window' }).then(function(clientList) {
-        for (let i = 0; i < clientList.length; i++) {
-          let client = clientList[i];
-          if (client.url === '/' && 'focus' in client) {
-            client.postMessage({ action: 'restart_timer', tag: event.notification.tag });
-            return client.focus();
-          }
-        }
-      })
-    );
-  }
-});
-=============================================================================
-*/
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   ShieldAlert, RotateCcw, AlertTriangle, X, Minus, Plus,
@@ -34,6 +9,10 @@ import {
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+
+// --- IMPORTACIONES NATIVAS DE CAPACITOR ---
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { ForegroundService } from '@capawesome-team/capacitor-android-foreground-service';
 
 const dict = {
   en: {
@@ -278,7 +257,67 @@ const App = () => {
   const pointerPosRef = useRef({ x: 0, y: 0 });
   const autoScrollRafRef = useRef(null);
 
-  // Lógica de Notificaciones de Sistema Android Nativas
+  // =========================================================================
+  // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO
+  // =========================================================================
+  
+  // Iniciar el Foreground Service (Reloj persistente en barra de Android)
+  useEffect(() => {
+    const initForegroundService = async () => {
+      try {
+        await ForegroundService.startForegroundService({
+          id: 1234,
+          title: 'War Control Activo',
+          body: 'Monitoreando cronómetros en segundo plano',
+          smallIcon: 'ic_launcher' // Requisito estándar para Android
+        });
+      } catch (error) {
+        console.log("Error iniciando Foreground Service nativo:", error);
+      }
+    };
+
+    // Solicitar permisos de notificación obligatorios en Android 13+
+    const requestPerms = async () => {
+        try {
+            await LocalNotifications.requestPermissions();
+        } catch(e) {}
+    };
+
+    requestPerms();
+    initForegroundService();
+  }, []);
+
+  // Programar alarma exacta con el sistema Android
+  const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
+      if (!sysNotifOnRef.current) return;
+      try {
+          await LocalNotifications.schedule({
+              notifications: [
+                  {
+                      title: title,
+                      body: body,
+                      id: id,
+                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, // allowWhileIdle permite saltar el reposo
+                      sound: null,
+                      actionTypeId: "",
+                      extra: null
+                  }
+              ]
+          });
+      } catch (e) { 
+          console.error("Error programando alarma nativa:", e); 
+      }
+  };
+
+  // Cancelar alarma en el sistema Android si se pausa/elimina
+  const cancelNativeAlarm = async (id) => {
+      try { 
+          await LocalNotifications.cancel({ notifications: [{ id: id }] }); 
+      } catch (e) { 
+          console.error("Error cancelando alarma nativa:", e); 
+      }
+  };
+
   const toggleSystemNotifications = async () => {
     if (sysNotifOn) {
         setSysNotifOn(false);
@@ -286,75 +325,20 @@ const App = () => {
         return;
     }
 
-    if (!('Notification' in window)) {
-        alert("Este navegador no soporta notificaciones de sistema.");
-        return;
-    }
-
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-        setSysNotifOn(true);
-        if (syncRef.current) syncRef.current({ sysNotifOn: true });
-        
-        // Registrar Service Worker silenciosamente para habilitar acciones en notificaciones
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/service-worker.js').catch(err => {
-                console.log("Service Worker no registrado (Las acciones nativas no funcionarán minimizadas).", err);
-            });
+    try {
+        const permission = await LocalNotifications.requestPermissions();
+        if (permission.display === 'granted') {
+            setSysNotifOn(true);
+            if (syncRef.current) syncRef.current({ sysNotifOn: true });
+        } else {
+            alert("Permiso de notificación nativa denegado.");
         }
+    } catch(err) {
+        console.log(err);
     }
   };
 
-  const sendAndroidNotification = async (title, body, tag, taskId = null) => {
-      if (!sysNotifOnRef.current || Notification.permission !== 'granted') return;
-
-      const options = {
-          body: body,
-          icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
-          badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
-          vibrate: [500, 200, 500],
-          tag: tag,
-          renotify: true,
-          requireInteraction: true,
-          actions: taskId ? [
-              { action: 'close', title: 'Cerrar' },
-              { action: 'restart', title: 'Reiniciar' }
-          ] : []
-      };
-
-      try {
-          if ('serviceWorker' in navigator) {
-              const reg = await navigator.serviceWorker.getRegistration();
-              if (reg) {
-                  await reg.showNotification(title, options);
-                  return;
-              }
-          }
-          // Fallback nativo
-          new Notification(title, { body, tag });
-      } catch (e) {
-          console.error("Fallo al enviar notificación:", e);
-      }
-  };
-
-  useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
-    const handleSWMessage = (event) => {
-        if (event.data && event.data.action === 'restart_timer') {
-            const taskIdStr = event.data.tag.split('_')[1];
-            const taskId = parseInt(taskIdStr, 10);
-            if (!isNaN(taskId)) {
-                setTasks(prev => {
-                    const nl = prev.map(x => x.id === taskId ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x);
-                    if(syncRef.current) syncRef.current({ tasks: nl });
-                    return nl;
-                });
-            }
-        }
-    };
-    navigator.serviceWorker.addEventListener('message', handleSWMessage);
-    return () => navigator.serviceWorker.removeEventListener('message', handleSWMessage);
-  }, []);
+  // =========================================================================
 
   const toggleLanguage = () => {
       const nextLang = lang === 'en' ? 'es' : 'en';
@@ -582,8 +566,9 @@ const App = () => {
     if (!activeAlert && alertQueue.length === 0) stopInfiniteAlarm();
   }, [activeAlert, alertQueue, stopInfiniteAlarm]);
 
+
   // ==========================================
-  // MOTOR DE RELOJ RECTIFICADO (NATIVO, SIN WORKER PARA EVITAR CONGELAMIENTO)
+  // MOTOR DE RELOJ CON RETROACTIVO
   // ==========================================
   useEffect(() => {
     const ticker = setInterval(() => {
@@ -601,7 +586,6 @@ const App = () => {
             if (t.isRunning && t.serverEndTime) {
                 const exactRemaining = Math.max(0, Math.floor((t.serverEndTime - now) / 1000));
                 
-                // CONDICIÓN ESTRICTA: Evita la repetición destructiva borrando serverEndTime al finalizar
                 if (exactRemaining === 0 && !t.alerted) {
                     changedTasks = true;
                     hasNewFinishedTasks = true;
@@ -640,23 +624,12 @@ const App = () => {
             if (finishedLabels.length > 0) {
                 alertTitle = t('taskFinished');
                 notifBody = finishedLabels.map(l => `• ${l}`).join('\n');
-                
-                finishedLabels.forEach((label, idx) => {
-                    sendAndroidNotification(
-                        `${label}, ¡Completado!`, 
-                        "Toca Reiniciar para volver a activarlo.", 
-                        `task_${finishedTaskIds[idx]}`,
-                        finishedTaskIds[idx]
-                    );
-                });
             }
 
             if (newlyTriggeredAlarms.length > 0) {
                 const alarmLabels = newlyTriggeredAlarms.map(a => a.custom ? `Faltan ${a.h ? a.h+'h ' : ''}${a.m ? a.m+'m ' : ''}${a.s ? a.s+'s' : ''}`.trim() : `Faltan ${a.mins} Minutos`).join('\n• ');
                 if (notifBody) { notifBody += `\n\n${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
                 else { alertTitle = t('earlyWarnings'); notifBody = `• ${alarmLabels}`; }
-
-                sendAndroidNotification("Aviso Temprano", alarmLabels, "war_alarm");
 
                 nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
                 setWarAlarms(nextAlarms); if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
@@ -727,8 +700,14 @@ const App = () => {
         const h = parseInt(draft.h || 0), m = parseInt(draft.m || 0), s = parseInt(draft.s || 0);
         const total = (h * 3600) + (m * 60) + s;
         const label = (draft.label.trim() || `PLAN ${startingIndex + index}`).toUpperCase();
-        nlTasks.push({ id: baseTime + index, label, initialSeconds: total, remainingSeconds: total, serverEndTime: baseTime + (total * 1000), isRunning: true, boxId: null, isNewFinish: false, alerted: false });
-        nlRootOrder.push({ id: baseTime + index, type: 'task' });
+        
+        const endTimeMs = baseTime + (total * 1000);
+        const taskId = baseTime + index;
+        
+        nlTasks.push({ id: taskId, label, initialSeconds: total, remainingSeconds: total, serverEndTime: endTimeMs, isRunning: true, boxId: null, isNewFinish: false, alerted: false });
+        nlRootOrder.push({ id: taskId, type: 'task' });
+        
+        scheduleNativeAlarm(taskId, label, "¡Crono Completado!", endTimeMs);
     });
     setTasks(nlTasks); setRootOrder(nlRootOrder);
     if(syncRef.current) syncRef.current({ tasks: nlTasks, rootOrder: nlRootOrder });
@@ -746,7 +725,12 @@ const App = () => {
             const h = parseInt(draft.h || 0), m = parseInt(draft.m || 0), s = parseInt(draft.s || 0);
             const total = (h * 3600) + (m * 60) + s;
             const label = (draft.label.trim() || `PLAN ${startingIndex + index}`).toUpperCase();
-            nlTasks.push({ id: baseTime + 1000 + index, label, initialSeconds: total, remainingSeconds: total, serverEndTime: baseTime + (total * 1000), isRunning: true, boxId: boxId, isNewFinish: false, alerted: false });
+            
+            const taskId = baseTime + 1000 + index;
+            const endTimeMs = baseTime + (total * 1000);
+            
+            nlTasks.push({ id: taskId, label, initialSeconds: total, remainingSeconds: total, serverEndTime: endTimeMs, isRunning: true, boxId: boxId, isNewFinish: false, alerted: false });
+            scheduleNativeAlarm(taskId, label, "¡Crono Completado!", endTimeMs);
         });
     }
     setBoxes(nlBoxes); setTasks(nlTasks); setRootOrder(nlRootOrder);
@@ -763,7 +747,11 @@ const App = () => {
         const total = ((parseInt(draft.h || 0) * 3600) + (parseInt(draft.m || 0) * 60) + parseInt(draft.s || 0));
         if (total > 0) {
             const label = (draft.label.trim() || `NEW ${existingCount + index + 1}`).toUpperCase();
-            nlTasks.push({ id: baseTime + index, label, initialSeconds: total, remainingSeconds: total, serverEndTime: baseTime + (total * 1000), isRunning: true, boxId: boxId, isNewFinish: false, alerted: false });
+            
+            const taskId = baseTime + index;
+            const endTimeMs = baseTime + (total * 1000);
+            nlTasks.push({ id: taskId, label, initialSeconds: total, remainingSeconds: total, serverEndTime: endTimeMs, isRunning: true, boxId: boxId, isNewFinish: false, alerted: false });
+            scheduleNativeAlarm(taskId, label, "¡Crono Completado!", endTimeMs);
         }
     });
     setBoxes(nb); setTasks(nlTasks);
@@ -776,10 +764,17 @@ const App = () => {
     const nl = tasks.map(t => {
       if (t.id === id) {
         const timeChanged = t.initialSeconds !== ns;
+        const endTimeMs = timeChanged ? Date.now()+(ns*1000) : t.serverEndTime;
+        
+        if (timeChanged) {
+            cancelNativeAlarm(t.id);
+            scheduleNativeAlarm(t.id, t.label, "¡Crono Modificado y Completado!", endTimeMs);
+        }
+
         return { 
           ...t, label: editBuf.label.trim().toUpperCase() || t.label, initialSeconds: ns, 
           remainingSeconds: timeChanged ? ns : t.remainingSeconds, 
-          serverEndTime: timeChanged ? Date.now()+(ns*1000) : t.serverEndTime,
+          serverEndTime: endTimeMs,
           isRunning: timeChanged ? true : t.isRunning, isNewFinish: timeChanged ? false : t.isNewFinish, alerted: timeChanged ? false : t.alerted
         };
       }
@@ -792,7 +787,15 @@ const App = () => {
     const nl = tasks.map(t => {
       if (t.boxId === boxId && t.remainingSeconds > 0) {
         const isRunning = forcePause ? false : true;
-        return { ...t, isRunning, serverEndTime: isRunning ? Date.now() + (t.remainingSeconds * 1000) : null };
+        const endTimeMs = isRunning ? Date.now() + (t.remainingSeconds * 1000) : null;
+        
+        if (!isRunning) {
+            cancelNativeAlarm(t.id);
+        } else {
+            scheduleNativeAlarm(t.id, t.label, "¡Crono Reanudado Completado!", endTimeMs);
+        }
+        
+        return { ...t, isRunning, serverEndTime: endTimeMs };
       }
       return t;
     });
@@ -803,7 +806,12 @@ const App = () => {
     if (!confirmBoxReset) return;
     const boxId = confirmBoxReset.id;
     const nl = tasks.map(t => {
-      if (t.boxId === boxId) { return { ...t, remainingSeconds: t.initialSeconds, serverEndTime: Date.now() + (t.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false }; }
+      if (t.boxId === boxId) { 
+          const endTimeMs = Date.now() + (t.initialSeconds * 1000);
+          cancelNativeAlarm(t.id);
+          scheduleNativeAlarm(t.id, t.label, "¡Crono Reiniciado Completado!", endTimeMs);
+          return { ...t, remainingSeconds: t.initialSeconds, serverEndTime: endTimeMs, isRunning: true, isNewFinish: false, alerted: false }; 
+      }
       return t;
     });
     setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); setConfirmBoxReset(null);
@@ -967,8 +975,6 @@ const App = () => {
   };
 
   const dismissNewFinish = (id) => {
-      // isNewFinish controla solo la alerta visual (rojo titilante/visto)
-      // No debe afectar 'alerted' (que previene la repetición de sonidos/push)
       const nl = tasks.map(x => x.id === id ? { ...x, isNewFinish: false } : x);
       setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl });
   };
@@ -1038,10 +1044,30 @@ const App = () => {
             ) : (
               <>
                 {t.isNewFinish && ( <button onClick={(e) => { e.stopPropagation(); dismissNewFinish(t.id); }} className="p-1 px-2.5 bg-red-600 text-white rounded-lg font-black text-[9px] uppercase flex items-center gap-1 animate-pulse hover:bg-red-500 mr-1 shadow-[0_0_10px_rgba(220,38,38,0.5)]"><Check size={12}/> Visto</button> )}
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: Date.now() + (x.initialSeconds * 1000), isRunning: true, isNewFinish: false, alerted: false } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-300 hover:text-white' : 'text-zinc-700 hover:text-amber-500'}`}><RotateCcw size={16} /></button>
+                
+                <button onClick={async () => { 
+                    const endTimeMs = Date.now() + (t.initialSeconds * 1000);
+                    cancelNativeAlarm(t.id);
+                    scheduleNativeAlarm(t.id, t.label, "¡Crono Reiniciado Completado!", endTimeMs);
+                    const nl = tasks.map(x => x.id === t.id ? { ...x, remainingSeconds: x.initialSeconds, serverEndTime: endTimeMs, isRunning: true, isNewFinish: false, alerted: false } : x); 
+                    setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); 
+                }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-300 hover:text-white' : 'text-zinc-700 hover:text-amber-500'}`}><RotateCcw size={16} /></button>
+                
                 <button onClick={() => { const hVal = Math.floor(t.initialSeconds / 3600); const mVal = Math.floor((t.initialSeconds % 3600) / 60); const sVal = t.initialSeconds % 60; setEditBuf({ label: t.label, h: hVal > 0 ? String(hVal) : '', m: mVal > 0 ? String(mVal) : '', s: sVal > 0 ? String(sVal) : '' }); setEditingId(t.id); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-400 hover:text-white' : 'text-zinc-700 hover:text-blue-400'}`}><Edit2 size={16} /></button>
-                <button onClick={async () => { const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: !x.isRunning, serverEndTime: !x.isRunning ? Date.now() + (x.remainingSeconds * 1000) : null } : x); setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); }} className={`p-1.5 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-red-300' : 'text-zinc-600')}`}>{t.isRunning && t.remainingSeconds > 0 ? <Pause size={18} /> : <Play size={18} />}</button>
-                <button onClick={async () => { const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-500 hover:text-white' : 'text-zinc-800 hover:text-red-600'}`}><Trash2 size={16} /></button>
+                
+                <button onClick={async () => { 
+                    const isRunningNow = !t.isRunning;
+                    const endTimeMs = isRunningNow ? Date.now() + (t.remainingSeconds * 1000) : null;
+                    if (!isRunningNow) { cancelNativeAlarm(t.id); } 
+                    else { scheduleNativeAlarm(t.id, t.label, "¡Crono Reanudado Completado!", endTimeMs); }
+                    const nl = tasks.map(x => x.id === t.id ? { ...x, isRunning: isRunningNow, serverEndTime: endTimeMs } : x); 
+                    setTasks(nl); if(syncRef.current) syncRef.current({ tasks: nl }); 
+                }} className={`p-1.5 ${!t.isRunning && t.remainingSeconds > 0 ? 'text-yellow-400' : (t.isNewFinish ? 'text-red-300' : 'text-zinc-600')}`}>{t.isRunning && t.remainingSeconds > 0 ? <Pause size={18} /> : <Play size={18} />}</button>
+                
+                <button onClick={async () => { 
+                    cancelNativeAlarm(t.id);
+                    const nt = tasks.filter(x => x.id !== t.id); const nr = rootOrder.filter(item => item.id !== t.id); setTasks(nt); setRootOrder(nr); if(syncRef.current) syncRef.current({ tasks: nt, rootOrder: nr }); 
+                }} className={`p-1.5 transition-colors ${t.isNewFinish ? 'text-red-500 hover:text-white' : 'text-zinc-800 hover:text-red-600'}`}><Trash2 size={16} /></button>
               </>
             )}
           </div>
