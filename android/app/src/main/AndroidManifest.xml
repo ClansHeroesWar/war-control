@@ -13,19 +13,14 @@
     
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <application
+<application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
-<service
-            android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService"
-                        android:enabled="true"
-                                    android:exported="false"
-                                                android:foregroundServiceType="specialUse">
-                                                        
+
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation"
             android:name=".MainActivity"
@@ -50,11 +45,13 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
         <service
             android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse">
         </service>
+
     </application>
 </manifest>
