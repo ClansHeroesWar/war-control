@@ -269,7 +269,7 @@ const App = () => {
           id: 1234,
           title: 'War Control Activo',
           body: 'Monitoreando cronómetros en segundo plano',
-          smallIcon: 'ic_launcher' // Requisito estándar para Android
+          smallIcon: 'ic_stat_icon_config_sample' // Cambiado al icono seguro por defecto de Capacitor
         });
       } catch (error) {
         console.log("Error iniciando Foreground Service nativo:", error);
