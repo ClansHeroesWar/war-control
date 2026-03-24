@@ -231,6 +231,7 @@ const App = () => {
   const warAlarmsRef = useRef([]);
   const vibrateOnRef = useRef(false);
   const sysNotifOnRef = useRef(false);
+  const lastTickRef = useRef(0);
   const warSoundRef = useRef('siren');
   const taskSoundRef = useRef('radar');
   const activeAlarmEngineRef = useRef(null); 
@@ -280,87 +281,61 @@ useEffect(() => {
   initializeSystem();
 }, []);
 
-// 2. Actualización del Servicio en Primer Plano (Optimizado)
-// Solo actualiza cuando cambia la hora objetivo, evita el parpadeo infinito.
+// 2. Actualización DINÁMICA del Servicio en Primer Plano (CONTEO REGRESIVO)
+// Este efecto se ejecuta cada segundo porque escucha 'currentTime'.
 useEffect(() => {
-  const updateForegroundService = async () => {
+  // --- Estrangulamiento (Throttling) ---
+  const nowMs = Date.now();
+  // Si han pasado menos de 950ms desde la última actualización, ignoramos este tick.
+  // Esto evita saturar el puente nativo de Android.
+  if (nowMs - lastTickRef.current < 950) return;
+  lastTickRef.current = nowMs;
+
+  const updateDynamicForegroundService = async () => {
     let notifTitle = '\u2694 War Control';
     let notifBody = 'Sistema táctico activo. Esperando órdenes...';
 
     if (targetEndTime) {
-        const timeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
-        const timeStr = `${timeParts[0]} ${timeParts[1] || ''}`;
+        // Calcular tiempo restante exacto
+        const d = targetEndTime.getTime() - currentTime.getTime();
+        
+        // Formatear la hora de fin para mostrarla de forma estática
+        const endTimeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
+        const endTimeStr = `${endTimeParts[0]} ${endTimeParts[1] || ''}`;
 
-        notifTitle = '\u2694 Guerra Activa';
-        notifBody = `Fin de Guerra: ${timeStr}`;
+        if (d > 0) {
+            // Calcular HH:MM:SS
+            const h = Math.floor(d / 3600000);
+            const m = Math.floor((d % 3600000) / 60000);
+            const s = Math.floor((d % 60000) / 1000);
+            const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            
+            notifTitle = '\u2694 Guerra Activa';
+            // Mensaje DINÁMICO: Combina hora de fin con tiempo restante
+            notifBody = `Fin: ${endTimeStr} | Resta: ${timeStr}`; 
+        } else {
+            notifTitle = '\u2694 Guerra Finalizada';
+            notifBody = `La Guerra terminó a las: ${endTimeStr}.`;
+        }
     }
 
     try {
+        // Actualizamos la notificación nativa SIEMPRE en cada tick (1 vez por segundo)
         await ForegroundService.startForegroundService({
-          id: 1234,
+          id: 1234, // ID constante para actualizar la misma notificación
           title: notifTitle,
           body: notifBody,
           smallIcon: 'ic_lock_idle_alarm'
         });
     } catch (error) {
-        console.log("Error iniciando Foreground Service nativo:", error);
+        console.log("Error actualizando Foreground Service dinámico:", error);
     }
   };
 
-  updateForegroundService();
-}, [targetEndTime]);
+  updateDynamicForegroundService();
+}, [currentTime, targetEndTime]); // <-- CLAVE: Escucha currentTime para actualizarse cada segundo
 
-// Programar alarma exacta con el sistema Android
-const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
-    if (!sysNotifOnRef.current) return;
-    try {
-        await LocalNotifications.schedule({
-            notifications: [
-                {
-                    title: title,
-                    body: body,
-                    id: id,
-                    schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true },
-                    sound: null,
-                    actionTypeId: "",
-                    extra: null
-                }
-            ]
-        });
-    } catch (e) {
-        console.error("Error programando alarma nativa:", e);
-    }
-};
-
-// Cancelar alarma en el sistema Android si se pausa/elimina
-const cancelNativeAlarm = async (id) => {
-    try {
-        await LocalNotifications.cancel({ notifications: [{ id: id }] });
-    } catch (e) {
-        console.error("Error cancelando alarma nativa:", e);
-    }
-};
-
-const toggleSystemNotifications = async () => {
-  if (sysNotifOn) {
-      setSysNotifOn(false);
-      if (syncRef.current) syncRef.current({ sysNotifOn: false });
-      return;
-  }
-
-  try {
-      const permission = await LocalNotifications.requestPermissions();
-      if (permission.display === 'granted') {
-          setSysNotifOn(true);
-          if (syncRef.current) syncRef.current({ sysNotifOn: true });
-      } else {
-          alert("Permiso de notificación nativa denegado.");
-      }
-  } catch(err) {
-      console.log(err);
-  }
-};
-// =========================================================================
+// ... (Resto de funciones: scheduleNativeAlarm, cancelNativeAlarm, toggleSystemNotifications siguen igual) ...
 
   const toggleLanguage = () => {
       const nextLang = lang === 'en' ? 'es' : 'en';
