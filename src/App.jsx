@@ -233,10 +233,6 @@ const App = () => {
   const vibrateOnRef = useRef(false);
   const sysNotifOnRef = useRef(false);
   
-  // Referencias para evitar el parpadeo de ForegroundService
-  const lastTickRef = useRef(0);
-  const isForegroundRunningRef = useRef(false);
-
   const warSoundRef = useRef('siren');
   const taskSoundRef = useRef('radar');
   const activeAlarmEngineRef = useRef(null); 
@@ -264,10 +260,10 @@ const App = () => {
   const autoScrollRafRef = useRef(null);
 
   // =========================================================================
-  // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO
+  // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO (ESTABILIZADA)
   // =========================================================================
 
-  // 1. Inicialización y Listener de toques
+  // 1. Inicialización básica de permisos
   useEffect(() => {
     const initializeSystem = async () => {
       try {
@@ -281,94 +277,38 @@ const App = () => {
       } catch (error) {
          console.error("Error crítico en la inicialización:", error);
       }
-
-      // Listener: Abre la app y suena la acústica cuando tocas la notificación del cronómetro
-      try {
-          await LocalNotifications.addListener('localNotificationActionPerformed', (notificationAction) => {
-              triggerInfiniteAlarm('task'); // Despierta el sonido JS
-              setAlertQueue(prev => [...prev, {
-                  title: t('taskFinished'),
-                  body: `• ${notificationAction.notification.title}`,
-                  type: 'task'
-              }]);
-          });
-      } catch(e) {
-          console.log("Listener de notificación no soportado en web", e);
-      }
     };
-
     initializeSystem();
-  }, [t]);
+  }, []);
 
-  // 2. Notificación Principal en Vivo (Solución Parpadeo)
+  // 2. Notificación en Primer Plano (ESTÁTICA - Solo se actualiza al fijar hora de guerra)
   useEffect(() => {
-    const nowMs = Date.now();
-    // Filtro de 1 segundo
-    if (nowMs - lastTickRef.current < 950) return;
-    lastTickRef.current = nowMs;
-
-    const updateDynamicForegroundService = async () => {
+    const updateForegroundService = async () => {
       let notifTitle = '\u2694 War Control';
-      let notifBody = 'Sistema táctico activo. Esperando órdenes...';
+      let notifBody = 'Sistema táctico activo.';
 
       if (targetEndTime) {
-          const d = targetEndTime.getTime() - currentTime.getTime();
-          const endTimeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
-          const endTimeStr = `${endTimeParts[0]} ${endTimeParts[1] || ''}`;
-
-          if (d > 0) {
-              const h = Math.floor(d / 3600000);
-              const m = Math.floor((d % 3600000) / 60000);
-              const s = Math.floor((d % 60000) / 1000);
-              const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-              
-              notifTitle = '\u2694 Guerra Activa';
-              notifBody = `Fin: ${endTimeStr} | Resta: ${timeStr}`; 
-          } else {
-              notifTitle = '\u2694 Guerra Finalizada';
-              notifBody = `La Guerra terminó a las: ${endTimeStr}.`;
-          }
+          const timeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
+          const timeStr = `${timeParts[0]} ${timeParts[1] || ''}`;
+          notifBody = `Guerra activa. Fin establecido a las: ${timeStr}`;
       }
 
       try {
-          if (!isForegroundRunningRef.current) {
-              // Inicia la primera vez
-              await ForegroundService.startForegroundService({
-                  id: 1234,
-                  title: notifTitle,
-                  body: notifBody,
-                  smallIcon: 'ic_lock_idle_alarm'
-              });
-              isForegroundRunningRef.current = true;
-          } else {
-              // Actualiza de forma silenciosa para evitar parpadeo
-              if (ForegroundService.updateForegroundService) {
-                  await ForegroundService.updateForegroundService({
-                      id: 1234,
-                      title: notifTitle,
-                      body: notifBody,
-                      smallIcon: 'ic_lock_idle_alarm'
-                  });
-              } else {
-                  // Fallback seguro si la versión del plugin no tiene update
-                  await ForegroundService.startForegroundService({
-                      id: 1234,
-                      title: notifTitle,
-                      body: notifBody,
-                      smallIcon: 'ic_lock_idle_alarm'
-                  });
-              }
-          }
+          await ForegroundService.startForegroundService({
+            id: 1234,
+            title: notifTitle,
+            body: notifBody,
+            smallIcon: 'ic_lock_idle_alarm'
+          });
       } catch (error) {
           console.log("Error Foreground Service:", error);
-          isForegroundRunningRef.current = false;
       }
     };
 
-    updateDynamicForegroundService();
-  }, [currentTime, targetEndTime]);
+    updateForegroundService();
+  }, [targetEndTime]); // Solo reacciona si cambia la hora objetivo, evita el parpadeo infinito.
 
-  // Programar alarma (Con el código original que sí te funcionaba en segundo plano)
+  // 3. Programación de Alarmas Locales (COMO EN TU CÓDIGO ORIGINAL QUE FUNCIONABA)
   const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
       if (!sysNotifOnRef.current) return;
       try {
@@ -378,10 +318,10 @@ const App = () => {
                       title: title,
                       body: body,
                       id: id,
-                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, // allowWhileIdle permite saltar el reposo
+                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true },
                       actionTypeId: "",
-                      extra: { taskId: id }
-                      // Eliminé "sound: null" para que use el sonido de alerta de tu Android cuando la app esté cerrada
+                      extra: null
+                      // SOUND OMITIDO: El sistema utilizará su sonido por defecto sin silenciarlo.
                   }
               ]
           });
@@ -390,7 +330,6 @@ const App = () => {
       }
   };
 
-  // Cancelar alarma
   const cancelNativeAlarm = async (id) => {
       try { 
           await LocalNotifications.cancel({ notifications: [{ id: id }] });
