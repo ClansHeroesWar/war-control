@@ -258,30 +258,12 @@ const App = () => {
   const autoScrollRafRef = useRef(null);
 
   // =========================================================================
-  // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO
+  // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO (REPARADO)
   // =========================================================================
   
-// Iniciar el Foreground Service (Reloj persistente en barra de Android)
-useEffect(() => {
-    const initForegroundService = async () => {
-      try {
-        await ForegroundService.startForegroundService({
-          id: 1234,
-          title: '⚔ War Control', // O directamente '⚔ (U+2694) War Control'
-          body: 'Estableciendo conexión operativa...',
-          smallIcon: 'ic_lock_idle_alarm' // Esto es lo único que dibuja en la barra superior
-        });
-      } catch (error) {
-        console.log("Error iniciando Foreground Service nativo:", error);
-      }
-    };
-
-    // Solicitar permisos de notificación obligatorios en Android 13+
-// 1. Inicialización Defensiva (PRUEBA DE DIAGNÓSTICO)
   useEffect(() => {
     const initializeSystem = async () => {
       try {
-        // PASO 1: Pedir permisos de notificación de forma segura y ESPERAR
         if (typeof Notification !== 'undefined') {
             const permStatus = await Notification.requestPermission();
             if (permStatus === 'granted') {
@@ -290,26 +272,22 @@ useEffect(() => {
             }
         }
 
-        // --- CÓDIGO NATIVO COMENTADO PARA PRUEBA ---
-        /*
         try {
             await LocalNotifications.requestPermissions();
         } catch (e) {
-            console.log("Error silencioso pidiendo permisos nativos:", e);
+            console.log("Error pidiendo permisos nativos:", e);
         }
 
-        if (sysNotifOnRef.current) {
-            try {
-                await ForegroundService.startForegroundService({
-                  id: 1234,
-                  title: 'War Control',
-                  body: 'Sistema activo.'
-                });
-            } catch (serviceError) {
-                console.error("El Foreground Service falló:", serviceError);
-            }
+        try {
+            await ForegroundService.startForegroundService({
+              id: 1234,
+              title: '\u2694 War Control', // Símbolo Unicode de espadas
+              body: 'Sistema táctico activo.',
+              smallIcon: 'ic_lock_idle_alarm' // Icono nativo del sistema
+            });
+        } catch (serviceError) {
+            console.error("El Foreground Service falló:", serviceError);
         }
-        */
       } catch (generalError) {
          console.error("Error crítico en la inicialización:", generalError);
       }
@@ -318,17 +296,49 @@ useEffect(() => {
     initializeSystem();
   }, []);
 
-  // Programar alarma exacta con el sistema Android
+  const lastTickRef = useRef(0);
+  useEffect(() => {
+      const now = Date.now();
+      if (now - lastTickRef.current < 1000) return;
+      lastTickRef.current = now;
+
+      if (targetEndTime) {
+          const d = targetEndTime.getTime() - currentTime.getTime();
+          if (d > 0) {
+              const h = Math.floor(d/3600000);
+              const m = Math.floor((d%3600000)/60000);
+              const s = Math.floor((d%60000)/1000);
+              const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+              
+              ForegroundService.startForegroundService({
+                  id: 1234,
+                  title: '\u2694 Guerra Activa',
+                  body: `Tiempo restante: ${timeStr}`,
+                  smallIcon: 'ic_lock_idle_alarm'
+              }).catch(()=>{});
+          } else {
+              ForegroundService.startForegroundService({
+                  id: 1234,
+                  title: 'War Control',
+                  body: `La Guerra ha finalizado.`,
+                  smallIcon: 'ic_lock_idle_alarm'
+              }).catch(()=>{});
+          }
+      }
+  }, [currentTime, targetEndTime]);
+
   const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
       if (!sysNotifOnRef.current) return;
+      const safeId = Number(id) % 2147483647; 
+      
       try {
           await LocalNotifications.schedule({
               notifications: [
                   {
                       title: title,
                       body: body,
-                      id: id,
-                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, // allowWhileIdle permite saltar el reposo de Android
+                      id: safeId, 
+                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, 
                       sound: null,
                       actionTypeId: "",
                       extra: null
@@ -340,10 +350,10 @@ useEffect(() => {
       }
   };
 
-  // Cancelar alarma en el sistema Android si se pausa/elimina
   const cancelNativeAlarm = async (id) => {
+      const safeId = Number(id) % 2147483647;
       try { 
-          await LocalNotifications.cancel({ notifications: [{ id: id }] }); 
+          await LocalNotifications.cancel({ notifications: [{ id: safeId }] }); 
       } catch (e) { 
           console.error("Error cancelando alarma nativa:", e); 
       }
@@ -369,7 +379,31 @@ useEffect(() => {
     }
   };
 
-  // =========================================================================
+  const sendImmediateWebNotification = async (title, body, tag, taskId = null) => {
+      if (!sysNotifOnRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+      const options = {
+          body: body,
+          icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+          badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
+          vibrate: [500, 200, 500],
+          tag: tag,
+          renotify: true,
+          requireInteraction: true,
+          actions: taskId ? [
+              { action: 'close', title: 'Cerrar' },
+              { action: 'restart', title: 'Reiniciar' }
+          ] : []
+      };
+
+      try {
+          if ('serviceWorker' in navigator) {
+              const reg = await navigator.serviceWorker.getRegistration();
+              if (reg) { await reg.showNotification(title, options); return; }
+          }
+          new Notification(title, { body, tag });
+      } catch (e) { console.error("Fallo al enviar notificación:", e); }
+  };
 
   const toggleLanguage = () => {
       const nextLang = lang === 'en' ? 'es' : 'en';
@@ -598,9 +632,6 @@ useEffect(() => {
   }, [activeAlert, alertQueue, stopInfiniteAlarm]);
 
 
-  // ==========================================
-  // MOTOR DE RELOJ CON RETROACTIVO
-  // ==========================================
   useEffect(() => {
     const ticker = setInterval(() => {
         if (isDraggingRef.current) return;
