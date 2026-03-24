@@ -277,7 +277,7 @@ useEffect(() => {
     };
 
     // Solicitar permisos de notificación obligatorios en Android 13+
-    // 1. Inicialización Defensiva
+// 1. Inicialización Defensiva (PRUEBA DE DIAGNÓSTICO)
   useEffect(() => {
     const initializeSystem = async () => {
       try {
@@ -290,27 +290,26 @@ useEffect(() => {
             }
         }
 
+        // --- CÓDIGO NATIVO COMENTADO PARA PRUEBA ---
+        /*
         try {
-            // Intentamos pedir permisos nativos también
             await LocalNotifications.requestPermissions();
         } catch (e) {
             console.log("Error silencioso pidiendo permisos nativos:", e);
         }
 
-        // PASO 2: Solo si tenemos el permiso interno, intentamos arrancar el servicio
         if (sysNotifOnRef.current) {
             try {
                 await ForegroundService.startForegroundService({
                   id: 1234,
                   title: 'War Control',
-                  body: 'Sistema activo.',
-                  // Eliminamos el smallIcon temporalmente para ver si esa es la causa del crash. 
-                  // Capacitor debería usar el icono de la app por defecto.
+                  body: 'Sistema activo.'
                 });
             } catch (serviceError) {
-                console.error("El Foreground Service falló al iniciar, pero la app no debe cerrarse:", serviceError);
+                console.error("El Foreground Service falló:", serviceError);
             }
         }
+        */
       } catch (generalError) {
          console.error("Error crítico en la inicialización:", generalError);
       }
