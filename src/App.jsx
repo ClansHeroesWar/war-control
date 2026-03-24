@@ -257,153 +257,110 @@ const App = () => {
   const pointerPosRef = useRef({ x: 0, y: 0 });
   const autoScrollRafRef = useRef(null);
 
-  // =========================================================================
-  // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO (REPARADO)
-  // =========================================================================
-  
-  useEffect(() => {
-    const initializeSystem = async () => {
-      try {
-        if (typeof Notification !== 'undefined') {
-            const permStatus = await Notification.requestPermission();
-            if (permStatus === 'granted') {
-                setSysNotifOn(true);
-                if (syncRef.current) syncRef.current({ sysNotifOn: true });
-            }
-        }
+// =========================================================================
+// ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO
+// =========================================================================
 
-        try {
-            await LocalNotifications.requestPermissions();
-        } catch (e) {
-            console.log("Error pidiendo permisos nativos:", e);
-        }
-
-        try {
-            await ForegroundService.startForegroundService({
-              id: 1234,
-              title: '\u2694 War Control', // Símbolo Unicode de espadas
-              body: 'Sistema táctico activo.',
-              smallIcon: 'ic_lock_idle_alarm' // Icono nativo del sistema
-            });
-        } catch (serviceError) {
-            console.error("El Foreground Service falló:", serviceError);
-        }
-      } catch (generalError) {
-         console.error("Error crítico en la inicialización:", generalError);
-      }
-    };
-
-    initializeSystem();
-  }, []);
-
-  const lastTickRef = useRef(0);
-  useEffect(() => {
-      const now = Date.now();
-      if (now - lastTickRef.current < 1000) return;
-      lastTickRef.current = now;
-
-      if (targetEndTime) {
-          const d = targetEndTime.getTime() - currentTime.getTime();
-          if (d > 0) {
-              const h = Math.floor(d/3600000);
-              const m = Math.floor((d%3600000)/60000);
-              const s = Math.floor((d%60000)/1000);
-              const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-              
-              ForegroundService.startForegroundService({
-                  id: 1234,
-                  title: '\u2694 Guerra Activa',
-                  body: `Tiempo restante: ${timeStr}`,
-                  smallIcon: 'ic_lock_idle_alarm'
-              }).catch(()=>{});
-          } else {
-              ForegroundService.startForegroundService({
-                  id: 1234,
-                  title: 'War Control',
-                  body: `La Guerra ha finalizado.`,
-                  smallIcon: 'ic_lock_idle_alarm'
-              }).catch(()=>{});
+// 1. Inicialización de Permisos (Se ejecuta solo una vez al abrir la app)
+useEffect(() => {
+  const initializeSystem = async () => {
+    try {
+      if (typeof Notification !== 'undefined') {
+          const permStatus = await Notification.requestPermission();
+          if (permStatus === 'granted') {
+              setSysNotifOn(true);
+              if (syncRef.current) syncRef.current({ sysNotifOn: true });
           }
       }
-  }, [currentTime, targetEndTime]);
-
-  const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
-      if (!sysNotifOnRef.current) return;
-      const safeId = Number(id) % 2147483647; 
-      
-      try {
-          await LocalNotifications.schedule({
-              notifications: [
-                  {
-                      title: title,
-                      body: body,
-                      id: safeId, 
-                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, 
-                      sound: null,
-                      actionTypeId: "",
-                      extra: null
-                  }
-              ]
-          });
-      } catch (e) { 
-          console.error("Error programando alarma nativa:", e); 
-      }
+    } catch (error) {
+       console.error("Error crítico en la inicialización:", error);
+    }
   };
 
-  const cancelNativeAlarm = async (id) => {
-      const safeId = Number(id) % 2147483647;
-      try { 
-          await LocalNotifications.cancel({ notifications: [{ id: safeId }] }); 
-      } catch (e) { 
-          console.error("Error cancelando alarma nativa:", e); 
-      }
-  };
+  initializeSystem();
+}, []);
 
-  const toggleSystemNotifications = async () => {
-    if (sysNotifOn) {
-        setSysNotifOn(false);
-        if (syncRef.current) syncRef.current({ sysNotifOn: false });
-        return;
+// 2. Actualización del Servicio en Primer Plano (Optimizado)
+// Solo actualiza cuando cambia la hora objetivo, evita el parpadeo infinito.
+useEffect(() => {
+  const updateForegroundService = async () => {
+    let notifTitle = '\u2694 War Control';
+    let notifBody = 'Sistema táctico activo. Esperando órdenes...';
+
+    if (targetEndTime) {
+        const timeParts = targetEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
+        const timeStr = `${timeParts[0]} ${timeParts[1] || ''}`;
+
+        notifTitle = '\u2694 Guerra Activa';
+        notifBody = `Fin de Guerra: ${timeStr}`;
     }
 
     try {
-        const permission = await LocalNotifications.requestPermissions();
-        if (permission.display === 'granted') {
-            setSysNotifOn(true);
-            if (syncRef.current) syncRef.current({ sysNotifOn: true });
-        } else {
-            alert("Permiso de notificación nativa denegado.");
-        }
-    } catch(err) {
-        console.log(err);
+        await ForegroundService.startForegroundService({
+          id: 1234,
+          title: notifTitle,
+          body: notifBody,
+          smallIcon: 'ic_lock_idle_alarm'
+        });
+    } catch (error) {
+        console.log("Error iniciando Foreground Service nativo:", error);
     }
   };
 
-  const sendImmediateWebNotification = async (title, body, tag, taskId = null) => {
-      if (!sysNotifOnRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  updateForegroundService();
+}, [targetEndTime]);
 
-      const options = {
-          body: body,
-          icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
-          badge: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png',
-          vibrate: [500, 200, 500],
-          tag: tag,
-          renotify: true,
-          requireInteraction: true,
-          actions: taskId ? [
-              { action: 'close', title: 'Cerrar' },
-              { action: 'restart', title: 'Reiniciar' }
-          ] : []
-      };
+// Programar alarma exacta con el sistema Android
+const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
+    if (!sysNotifOnRef.current) return;
+    try {
+        await LocalNotifications.schedule({
+            notifications: [
+                {
+                    title: title,
+                    body: body,
+                    id: id,
+                    schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true },
+                    sound: null,
+                    actionTypeId: "",
+                    extra: null
+                }
+            ]
+        });
+    } catch (e) {
+        console.error("Error programando alarma nativa:", e);
+    }
+};
 
-      try {
-          if ('serviceWorker' in navigator) {
-              const reg = await navigator.serviceWorker.getRegistration();
-              if (reg) { await reg.showNotification(title, options); return; }
-          }
-          new Notification(title, { body, tag });
-      } catch (e) { console.error("Fallo al enviar notificación:", e); }
-  };
+// Cancelar alarma en el sistema Android si se pausa/elimina
+const cancelNativeAlarm = async (id) => {
+    try {
+        await LocalNotifications.cancel({ notifications: [{ id: id }] });
+    } catch (e) {
+        console.error("Error cancelando alarma nativa:", e);
+    }
+};
+
+const toggleSystemNotifications = async () => {
+  if (sysNotifOn) {
+      setSysNotifOn(false);
+      if (syncRef.current) syncRef.current({ sysNotifOn: false });
+      return;
+  }
+
+  try {
+      const permission = await LocalNotifications.requestPermissions();
+      if (permission.display === 'granted') {
+          setSysNotifOn(true);
+          if (syncRef.current) syncRef.current({ sysNotifOn: true });
+      } else {
+          alert("Permiso de notificación nativa denegado.");
+      }
+  } catch(err) {
+      console.log(err);
+  }
+};
+// =========================================================================
 
   const toggleLanguage = () => {
       const nextLang = lang === 'en' ? 'es' : 'en';
@@ -632,6 +589,9 @@ const App = () => {
   }, [activeAlert, alertQueue, stopInfiniteAlarm]);
 
 
+  // ==========================================
+  // MOTOR DE RELOJ CON RETROACTIVO
+  // ==========================================
   useEffect(() => {
     const ticker = setInterval(() => {
         if (isDraggingRef.current) return;
