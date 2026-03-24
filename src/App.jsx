@@ -5,6 +5,7 @@ import {
   ArrowDownToLine, Volume2, Volume1, VolumeX,
   BellRing, Music, ChevronDown, ChevronUp, Settings, Clock, Globe, Info
 } from 'lucide-react';
+
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
@@ -135,6 +136,7 @@ try {
 }
 
 let globalAudioCtx = null;
+
 const initGlobalAudio = () => {
     if (!globalAudioCtx) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -166,6 +168,7 @@ const App = () => {
   const t = (key) => dict[lang][key] || key;
 
   const [activeHelp, setActiveHelp] = useState(null);
+
   const SOUND_PROFILES = [
     { id: 'siren', name: t('soundSiren'), type: t('typeUrgent') },
     { id: 'radar', name: t('soundRadar'), type: t('typeUrgent') },
@@ -229,13 +232,17 @@ const App = () => {
   const warAlarmsRef = useRef([]);
   const vibrateOnRef = useRef(false);
   const sysNotifOnRef = useRef(false);
+  
+  // Referencias para evitar el parpadeo de ForegroundService
   const lastTickRef = useRef(0);
+  const isForegroundRunningRef = useRef(false);
+
   const warSoundRef = useRef('siren');
   const taskSoundRef = useRef('radar');
   const activeAlarmEngineRef = useRef(null); 
   const activeVibrationIntervalRef = useRef(null); 
   const previewEngineRef = useRef(null);
-  const syncRef = useRef(null); 
+  const syncRef = useRef(null);
   
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
   useEffect(() => { targetEndTimeRef.current = targetEndTime; }, [targetEndTime]);
@@ -260,27 +267,13 @@ const App = () => {
   // ARQUITECTURA DE ALARMAS NATIVAS Y SERVICIO EN PRIMER PLANO
   // =========================================================================
 
-  // 1. Inicialización de Permisos y Canal de Alta Prioridad
+  // 1. Inicialización y Listener de toques
   useEffect(() => {
     const initializeSystem = async () => {
       try {
         if (typeof Notification !== 'undefined') {
             const permStatus = await Notification.requestPermission();
             if (permStatus === 'granted') {
-                // CREAR CANAL DE ALTA PRIORIDAD PARA DESPERTAR EL DISPOSITIVO
-                try {
-                    await LocalNotifications.createChannel({
-                        id: 'war_alarms_max',
-                        name: 'Alarmas Tácticas',
-                        description: 'Alertas críticas de los cronómetros',
-                        importance: 5, // 5 = MAX (Despierta pantalla)
-                        visibility: 1, // Visible en pantalla de bloqueo
-                        vibration: true
-                    });
-                } catch(e) {
-                    console.error("Error creando canal:", e);
-                }
-
                 setSysNotifOn(true);
                 if (syncRef.current) syncRef.current({ sysNotifOn: true });
             }
@@ -288,15 +281,30 @@ const App = () => {
       } catch (error) {
          console.error("Error crítico en la inicialización:", error);
       }
+
+      // Listener: Abre la app y suena la acústica cuando tocas la notificación del cronómetro
+      try {
+          await LocalNotifications.addListener('localNotificationActionPerformed', (notificationAction) => {
+              triggerInfiniteAlarm('task'); // Despierta el sonido JS
+              setAlertQueue(prev => [...prev, {
+                  title: t('taskFinished'),
+                  body: `• ${notificationAction.notification.title}`,
+                  type: 'task'
+              }]);
+          });
+      } catch(e) {
+          console.log("Listener de notificación no soportado en web", e);
+      }
     };
 
     initializeSystem();
-  }, []);
+  }, [t]);
 
-  // 2. Actualización DINÁMICA del Servicio en Primer Plano (CONTEO REGRESIVO)
+  // 2. Notificación Principal en Vivo (Solución Parpadeo)
   useEffect(() => {
     const nowMs = Date.now();
-    if (nowMs - lastTickRef.current < 950) return; // Evita saturar el puente nativo
+    // Filtro de 1 segundo
+    if (nowMs - lastTickRef.current < 950) return;
     lastTickRef.current = nowMs;
 
     const updateDynamicForegroundService = async () => {
@@ -323,21 +331,44 @@ const App = () => {
       }
 
       try {
-          await ForegroundService.startForegroundService({
-            id: 1234,
-            title: notifTitle,
-            body: notifBody,
-            smallIcon: 'ic_lock_idle_alarm'
-          });
+          if (!isForegroundRunningRef.current) {
+              // Inicia la primera vez
+              await ForegroundService.startForegroundService({
+                  id: 1234,
+                  title: notifTitle,
+                  body: notifBody,
+                  smallIcon: 'ic_lock_idle_alarm'
+              });
+              isForegroundRunningRef.current = true;
+          } else {
+              // Actualiza de forma silenciosa para evitar parpadeo
+              if (ForegroundService.updateForegroundService) {
+                  await ForegroundService.updateForegroundService({
+                      id: 1234,
+                      title: notifTitle,
+                      body: notifBody,
+                      smallIcon: 'ic_lock_idle_alarm'
+                  });
+              } else {
+                  // Fallback seguro si la versión del plugin no tiene update
+                  await ForegroundService.startForegroundService({
+                      id: 1234,
+                      title: notifTitle,
+                      body: notifBody,
+                      smallIcon: 'ic_lock_idle_alarm'
+                  });
+              }
+          }
       } catch (error) {
-          console.log("Error actualizando Foreground Service:", error);
+          console.log("Error Foreground Service:", error);
+          isForegroundRunningRef.current = false;
       }
     };
 
     updateDynamicForegroundService();
   }, [currentTime, targetEndTime]);
 
-  // Programar alarma exacta usando el canal de MÁXIMA PRIORIDAD
+  // Programar alarma (Con el código original que sí te funcionaba en segundo plano)
   const scheduleNativeAlarm = async (id, title, body, triggerTimeMs) => {
       if (!sysNotifOnRef.current) return;
       try {
@@ -347,22 +378,23 @@ const App = () => {
                       title: title,
                       body: body,
                       id: id,
-                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true },
-                      channelId: 'war_alarms_max', // Obligamos a usar el canal creado
+                      schedule: { at: new Date(triggerTimeMs), allowWhileIdle: true }, // allowWhileIdle permite saltar el reposo
                       actionTypeId: "",
-                      extra: null
+                      extra: { taskId: id }
+                      // Eliminé "sound: null" para que use el sonido de alerta de tu Android cuando la app esté cerrada
                   }
               ]
           });
-      } catch (e) {
+      } catch (e) { 
           console.error("Error programando alarma nativa:", e);
       }
   };
 
+  // Cancelar alarma
   const cancelNativeAlarm = async (id) => {
-      try {
+      try { 
           await LocalNotifications.cancel({ notifications: [{ id: id }] });
-      } catch (e) {
+      } catch (e) { 
           console.error("Error cancelando alarma nativa:", e);
       }
   };
@@ -377,17 +409,6 @@ const App = () => {
     try {
         const permission = await LocalNotifications.requestPermissions();
         if (permission.display === 'granted') {
-            try {
-                await LocalNotifications.createChannel({
-                    id: 'war_alarms_max',
-                    name: 'Alarmas Tácticas',
-                    description: 'Alertas críticas de los cronómetros',
-                    importance: 5,
-                    visibility: 1,
-                    vibration: true
-                });
-            } catch(e) {}
-
             setSysNotifOn(true);
             if (syncRef.current) syncRef.current({ sysNotifOn: true });
         } else {
