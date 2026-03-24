@@ -669,6 +669,9 @@ const App = () => {
                 if (notifBody) { notifBody += `\n\n${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
                 else { alertTitle = t('earlyWarnings'); notifBody = `• ${alarmLabels}`; }
 
+                // ¡AQUÍ ESTÁ LA CORRECCIÓN! Programar la notificación local para que salte
+                scheduleNativeAlarm(Date.now(), "Aviso Temprano", alarmLabels, Date.now() + 1000);
+
                 nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
                 setWarAlarms(nextAlarms); if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
             }
