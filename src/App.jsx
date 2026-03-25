@@ -606,10 +606,11 @@ const App = () => {
 
 
   // ==========================================
-  // MOTOR DE RELOJ CON RETROACTIVO (LIMPIO, SIN TOCAR EL FOREGROUND)
+  // MOTOR DE RELOJ CON RETROACTIVO (LIMPIO, ACTUALIZA NOTIFICACIÓN)
   // ==========================================
   useEffect(() => {
-    const ticker = setInterval(() => {
+    // 1. Agregamos 'async' aquí para poder llamar a la notificación
+    const ticker = setInterval(async () => {
         if (isDraggingRef.current) return;
 
         const now = Date.now();
@@ -619,6 +620,36 @@ const App = () => {
         let hasNewFinishedTasks = false;
         let finishedLabels = [];
         let finishedTaskIds = [];
+
+        // --- INICIO: NUEVA LÓGICA PARA LA NOTIFICACIÓN EN VIVO ---
+        if (targetEndTimeRef.current && sysNotifOnRef.current) {
+            const msRem = targetEndTimeRef.current.getTime() - now;
+            if (msRem > 0) {
+                // Calculamos horas, minutos y segundos restantes
+                const h = Math.floor(msRem / 3600000);
+                const m = Math.floor((msRem % 3600000) / 60000);
+                const s = Math.floor((msRem % 60000) / 1000);
+                
+                const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                
+                // Formateamos la hora de fin para mostrarla
+                const endParts = targetEndTimeRef.current.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).split(' ');
+                const endStr = `${endParts[0]} ${endParts[1] || ''}`;
+
+                // Actualizamos el Foreground Service silenciosamente
+                try {
+                    await ForegroundService.startForegroundService({
+                        id: 1234, // Mantengo el mismo ID que ya usas en syncWar
+                        title: 'War Control',
+                        body: `Quedan ${timeStr} | Fin: ${endStr}`,
+                        smallIcon: 'ic_lock_idle_alarm'
+                    });
+                } catch(e) {
+                    console.log("Error silente actualizando notificación:", e);
+                }
+            }
+        }
+        // --- FIN: NUEVA LÓGICA ---
 
         const nextTasks = tasksRef.current.map(t => {
             if (t.isRunning && t.serverEndTime) {
@@ -657,7 +688,8 @@ const App = () => {
         }
 
         if (finishedLabels.length > 0 || newlyTriggeredAlarms.length > 0) {
-            let alertTitle = ""; let notifBody = "";
+            let alertTitle = "";
+            let notifBody = "";
 
             if (finishedLabels.length > 0) {
                 alertTitle = t('taskFinished');
@@ -667,13 +699,13 @@ const App = () => {
             if (newlyTriggeredAlarms.length > 0) {
                 const alarmLabels = newlyTriggeredAlarms.map(a => a.custom ? `Faltan ${a.h ? a.h+'h ' : ''}${a.m ? a.m+'m ' : ''}${a.s ? a.s+'s' : ''}`.trim() : `Faltan ${a.mins} Minutos`).join('\n• ');
                 if (notifBody) { notifBody += `\n\n${t('earlyWarnings')}:\n• ${alarmLabels}`; } 
-                else { alertTitle = t('earlyWarnings'); notifBody = `• ${alarmLabels}`; }
+                else { alertTitle = t('earlyWarnings');
+                notifBody = `• ${alarmLabels}`; }
 
-                // ¡AQUÍ ESTÁ LA CORRECCIÓN! Programar la notificación local para que salte
                 scheduleNativeAlarm(Date.now(), "Aviso Temprano", alarmLabels, Date.now() + 1000);
-
                 nextAlarms = nextAlarms.map(a => newlyTriggeredAlarms.find(na => na.id === a.id) ? { ...a, trig: true, on: false } : a);
-                setWarAlarms(nextAlarms); if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
+                setWarAlarms(nextAlarms);
+                if(syncRef.current) syncRef.current({ warAlarms: nextAlarms });
             }
             
             const alertType = newlyTriggeredAlarms.length > 0 && finishedLabels.length === 0 ? 'war' : 'task';
@@ -688,6 +720,7 @@ const App = () => {
 
     return () => clearInterval(ticker);
   }, [t]);
+
 
   const handleNum = (setter) => (e) => {
     let v = e.target.value.replace(/\D/g, '');
